@@ -2,6 +2,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:fyp/screens/login_screen.dart';
 
@@ -85,18 +86,33 @@ class _ProfileSettingsState extends State<ProfileSettings> {
               'Choose from Gallery', 
               () => _pickImage(ImageSource.gallery),
             ),
-            if (_profileImage != null)
+            if (_profileImage != null || (_profileImageUrl != null && _profileImageUrl!.isNotEmpty))
               _buildProfilePicOption(
-                Icons.delete, 
-                'Remove Photo', 
-                () {
+                Icons.delete,
+                'Remove Photo',
+                () async {
+                  Navigator.pop(context);
                   setState(() {
                     _profileImage = null;
+                    _profileImageUrl = null;
                   });
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Photo removed')),
-                  );
+                  final user = _authService.currentUser;
+                  if (user != null) {
+                    try {
+                      await Future.wait([
+                        user.updatePhotoURL(null),
+                        _firestore.collection('users').doc(user.uid).set(
+                          {'profileImageUrl': null, 'updatedAt': FieldValue.serverTimestamp()},
+                          SetOptions(merge: true),
+                        ),
+                      ]);
+                    } catch (_) {}
+                  }
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Profile photo removed.')),
+                    );
+                  }
                 },
               ),
           ],
@@ -106,22 +122,57 @@ class _ProfileSettingsState extends State<ProfileSettings> {
   }
 
   Future<void> _pickImage(ImageSource source) async {
+    XFile? image;
     try {
-      final XFile? image = await _imagePicker.pickImage(source: source);
-      if (image != null && mounted) {
-        setState(() {
-          _profileImage = File(image.path);
-        });
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Profile picture ${source == ImageSource.camera ? 'taken' : 'selected'}')),
-        );
-      }
+      image = await _imagePicker.pickImage(
+        source: source,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 85,
+      );
     } catch (e) {
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
+          SnackBar(content: Text('Could not access camera/gallery: $e')),
+        );
+      }
+      return;
+    }
+
+    if (image == null || !mounted) return;
+    Navigator.pop(context);
+
+    final file = File(image.path);
+    setState(() => _profileImage = file);
+
+    // Upload to Firebase Storage and persist URL to Firestore
+    final user = _authService.currentUser;
+    if (user == null) return;
+
+    try {
+      final ref = FirebaseStorage.instance
+          .ref()
+          .child('profile_pictures')
+          .child('${user.uid}.jpg');
+      await ref.putFile(file);
+      final url = await ref.getDownloadURL();
+
+      await Future.wait([
+        user.updatePhotoURL(url),
+        _firestore.collection('users').doc(user.uid).set(
+          {'profileImageUrl': url, 'updatedAt': FieldValue.serverTimestamp()},
+          SetOptions(merge: true),
+        ),
+      ]);
+
+      if (mounted) setState(() => _profileImageUrl = url);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Photo saved locally. Upload failed — check your connection.'),
+          ),
         );
       }
     }
