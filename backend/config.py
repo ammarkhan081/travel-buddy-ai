@@ -25,8 +25,8 @@ class Settings:
     DB_PATH: str = os.getenv("DB_PATH", "travel_buddy.db")
     
     # API Settings
-    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
-    OPENAI_MODEL_FALLBACKS: str = os.getenv("OPENAI_MODEL_FALLBACKS", "gpt-4o-mini,gpt-4.1-mini,gpt-3.5-turbo")
+    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    OPENAI_MODEL_FALLBACKS: str = os.getenv("OPENAI_MODEL_FALLBACKS", "gpt-4.1-mini,gpt-3.5-turbo")
     OPENAI_EMBEDDING_MODEL: str = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
     WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "whisper-1")
     APP_TIMEZONE: str = os.getenv("APP_TIMEZONE", "UTC")
