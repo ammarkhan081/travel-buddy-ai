@@ -118,7 +118,7 @@ class _ExpenseTrackerState extends State<ExpenseTracker> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          '\$${total.toStringAsFixed(2)}',
+                          'PKR ${total.toStringAsFixed(2)}',
                           style: const TextStyle(
                             fontSize: 32,
                             fontWeight: FontWeight.bold,
@@ -259,7 +259,7 @@ class _ExpenseTrackerState extends State<ExpenseTracker> {
         ),
         title: Text(category),
         trailing: Text(
-          '\$${amount.toStringAsFixed(2)}',
+          'PKR ${amount.toStringAsFixed(2)}',
           style: const TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.bold,
@@ -271,6 +271,7 @@ class _ExpenseTrackerState extends State<ExpenseTracker> {
 
   Widget _buildExpenseItem(BuildContext context, String docId, Map<String, dynamic> data) {
     final amount = (data['amount'] as num).toDouble();
+    final currency = (data['currency'] as String? ?? 'PKR').toUpperCase();
     final category = data['category'] ?? 'Other';
     final description = data['description'] ?? '';
     final date = DateTime.tryParse(data['date'] ?? '') ?? DateTime.now();
@@ -307,7 +308,7 @@ class _ExpenseTrackerState extends State<ExpenseTracker> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              '\$${amount.toStringAsFixed(2)}',
+              '$currency ${amount.toStringAsFixed(2)}',
               style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,

@@ -1,6 +1,9 @@
+import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../models/emergency_contact.dart';
 import '../../services/auth_service.dart';
@@ -22,6 +25,7 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
   CollectionReference get _contactsRef =>
       _db.collection('users').doc(_uid).collection('emergency_contacts');
 
+  static const _smsChannel = MethodChannel('com.example.fyp/sms');
   bool _sendingArrival = false;
 
   @override
@@ -199,10 +203,10 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
   Future<void> _sendArrivalToAll(List<EmergencyContact> contacts) async {
     setState(() => _sendingArrival = true);
 
+    // Get GPS location.
     String locationText = 'my current location';
     try {
-      final permission = await Geolocator.checkPermission();
-      LocationPermission perm = permission;
+      LocationPermission perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.denied) {
         perm = await Geolocator.requestPermission();
       }
@@ -223,11 +227,16 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
     final message =
         'Hi! I have safely arrived at my destination on $timeStr. My location: $locationText — Sent via Travio';
 
-    setState(() => _sendingArrival = false);
+    // Request SEND_SMS permission on Android so we can send without opening the SMS app.
+    bool canSendDirect = false;
+    if (Platform.isAndroid) {
+      final status = await Permission.sms.request();
+      canSendDirect = status.isGranted;
+    }
 
+    setState(() => _sendingArrival = false);
     if (!mounted) return;
 
-    // Show confirmation dialog before sending
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -239,8 +248,12 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('This will open your SMS app for each contact:',
-                style: TextStyle(fontSize: 13, color: Colors.grey)),
+            Text(
+              canSendDirect
+                  ? 'SMS will be sent automatically to:'
+                  : 'Your SMS app will open for each contact:',
+              style: const TextStyle(fontSize: 13, color: Colors.grey),
+            ),
             const SizedBox(height: 12),
             ...contacts.map((c) => Padding(
                   padding: const EdgeInsets.symmetric(vertical: 3),
@@ -249,8 +262,11 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
                       const Icon(Icons.person, size: 16,
                           color: Color(0xFF1E66F5)),
                       const SizedBox(width: 6),
-                      Text('${c.name} (${c.phone})',
-                          style: const TextStyle(fontWeight: FontWeight.w600)),
+                      Expanded(
+                        child: Text('${c.name} (${c.phone})',
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w600)),
+                      ),
                     ],
                   ),
                 )),
@@ -279,7 +295,7 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10))),
-            child: const Text('Send to All'),
+            child: Text(canSendDirect ? 'Send Automatically' : 'Send to All'),
           ),
         ],
       ),
@@ -287,10 +303,45 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
 
     if (confirm != true || !mounted) return;
 
+    int sentCount = 0;
     for (final contact in contacts) {
-      await _smsContact(contact, message);
-      // Small delay so SMS app can register before opening next
-      await Future.delayed(const Duration(milliseconds: 600));
+      if (canSendDirect) {
+        final ok = await _sendDirectSms(contact.phone, message);
+        if (ok) {
+          sentCount++;
+        } else {
+          // Direct send failed — fall back to opening the SMS app.
+          await _smsContact(contact, message);
+          await Future.delayed(const Duration(milliseconds: 600));
+        }
+      } else {
+        await _smsContact(contact, message);
+        await Future.delayed(const Duration(milliseconds: 600));
+      }
+    }
+
+    if (mounted && canSendDirect && sentCount > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'Arrival SMS sent to $sentCount contact${sentCount > 1 ? 's' : ''}!'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+  /// Sends an SMS directly using Android's SmsManager (no SMS app opened).
+  /// Returns true on success, false on failure.
+  Future<bool> _sendDirectSms(String phone, String message) async {
+    try {
+      await _smsChannel
+          .invokeMethod('sendSms', {'phone': phone, 'message': message});
+      return true;
+    } catch (e) {
+      debugPrint('Direct SMS failed for $phone: $e');
+      return false;
     }
   }
 
