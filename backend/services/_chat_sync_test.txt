@@ -1,3 +1,0 @@
-sync_test_line_1
-sync_test_line_2
-sync_test_line_3
