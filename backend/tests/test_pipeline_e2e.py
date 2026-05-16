@@ -99,6 +99,40 @@ def test_pipeline_branch_expense_create():
         assert body["requires_review"] is False
 
 
+def test_pipeline_branch_expense_create_pkr():
+    """Voice expense pipeline must store PKR amounts correctly."""
+    with patch(
+        "backend.services.intent_orchestrator_service.transcribe_audio",
+        new=AsyncMock(return_value={"transcript": "I spent 500 PKR on biryani in Lahore"}),
+    ), patch(
+        "backend.services.intent_orchestrator_service.detect_intent_gpt",
+        new=AsyncMock(
+            return_value={
+                "intent": "expense",
+                "confidence": 0.91,
+            }
+        ),
+    ), patch(
+        "backend.services.intent_orchestrator_service.extract_expense_gpt",
+        new=AsyncMock(
+            return_value={
+                "amount": 500.0,
+                "currency": "PKR",
+                "category": "food",
+                "description": "Biryani in Lahore",
+                "confidence": 0.89,
+            }
+        ),
+    ):
+        response = _post_voice()
+        assert response.status_code == 200
+        body = response.json()
+        assert body["intent"] == "expense"
+        assert body["action"] == "expense_created"
+        assert body["record_id"] is not None
+        assert body["details"]["amount"] == 500.0
+
+
 def test_pipeline_branch_knowledge_fallback_on_empty_transcript():
     with patch(
         "backend.services.intent_orchestrator_service.transcribe_audio",

@@ -136,9 +136,10 @@ Default currency is PKR (Pakistani Rupees) if none is mentioned."""
 
 def extract_with_regex(text: str) -> tuple:
     """Extract amount and currency using regex patterns."""
-    # Amount patterns — PKR first since it's the app default currency
+    # PKR first (app default). Both prefix (Rs 200) and suffix (200 PKR) forms supported.
     amount_patterns = [
-        (r'(\d+\.?\d*)\s*(PKR|Rs\.?)', 'PKR'),
+        (r'Rs\.?\s*(\d+\.?\d*)', 'PKR'),           # Rs 200 / Rs. 3500
+        (r'(\d+\.?\d*)\s*(?:PKR|Rs\.?)', 'PKR'),   # 200 PKR / 200 Rs
         (r'\$(\d+\.?\d*)', 'USD'),
         (r'(\d+\.?\d*)\s*(dollars?|USD)', 'USD'),
         (r'€(\d+\.?\d*)', 'EUR'),
@@ -171,9 +172,10 @@ def extract_with_regex(text: str) -> tuple:
 
 def extract_all_amounts_with_regex(text: str) -> tuple:
     """Extract all explicit monetary amounts and inferred currency."""
-    # PKR first — app default currency for Pakistan
+    # PKR first (app default). Both prefix (Rs 200) and suffix (200 PKR) forms supported.
     amount_patterns = [
-        (r'(\d+\.?\d*)\s*(PKR|Rs\.?)', 'PKR'),
+        (r'Rs\.?\s*(\d+\.?\d*)', 'PKR'),           # Rs 200 / Rs. 3500
+        (r'(\d+\.?\d*)\s*(?:PKR|Rs\.?)', 'PKR'),   # 200 PKR / 200 Rs
         (r'\$(\d+\.?\d*)', 'USD'),
         (r'(\d+\.?\d*)\s*(dollars?|USD)', 'USD'),
         (r'€(\d+\.?\d*)', 'EUR'),

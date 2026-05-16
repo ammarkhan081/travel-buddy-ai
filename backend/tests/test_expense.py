@@ -30,11 +30,84 @@ async def test_expense_extraction_gpt():
 def test_expense_extraction_regex():
     """Test regex-based expense extraction (fallback)."""
     from ai.inference.expense_parser.expense_extractor import extract_with_regex
-    
+
     amount, currency = extract_with_regex("Spent $50.99 on lunch")
-    
+
     assert amount == 50.99
     assert currency == "USD"
+
+
+# ── PKR (Pakistani Rupee) regex tests ─────────────────────────────────────────
+
+def test_expense_regex_pkr_explicit():
+    """'500 PKR' should resolve to PKR currency."""
+    from ai.inference.expense_parser.expense_extractor import extract_with_regex
+
+    amount, currency = extract_with_regex("I spent 500 PKR on biryani")
+
+    assert amount == 500.0
+    assert currency == "PKR"
+
+
+def test_expense_regex_rs_notation():
+    """'Rs 200' (common Pakistani shorthand) should resolve to PKR."""
+    from ai.inference.expense_parser.expense_extractor import extract_with_regex
+
+    amount, currency = extract_with_regex("paid Rs 200 for chai and samosa")
+
+    assert amount == 200.0
+    assert currency == "PKR"
+
+
+def test_expense_regex_rs_dot_notation():
+    """'Rs.' (with dot) should also be treated as PKR."""
+    from ai.inference.expense_parser.expense_extractor import extract_with_regex
+
+    amount, currency = extract_with_regex("hotel was Rs. 3500 per night")
+
+    assert amount == 3500.0
+    assert currency == "PKR"
+
+
+def test_expense_multi_amount_pkr():
+    """Multiple PKR amounts should be summed when joined by 'and'."""
+    from ai.inference.expense_parser.expense_extractor import (
+        extract_all_amounts_with_regex,
+        _resolve_multi_amount_value,
+    )
+
+    amounts, currency = extract_all_amounts_with_regex(
+        "spent 300 PKR on lunch and 150 PKR on tea"
+    )
+
+    assert currency == "PKR"
+    assert 300.0 in amounts
+    assert 150.0 in amounts
+    total = _resolve_multi_amount_value(
+        "spent 300 PKR on lunch and 150 PKR on tea", amounts
+    )
+    assert total == 450.0
+
+
+def test_expense_regex_hybrid_pkr_fallback():
+    """Regex hybrid fallback should detect PKR amounts correctly."""
+    from ai.inference.expense_parser.expense_extractor import extract_with_regex_hybrid
+
+    result = extract_with_regex_hybrid("bought a bus ticket for 250 PKR in Lahore")
+
+    assert result["amount"] == 250.0
+    assert result["currency"] == "PKR"
+    assert result["category"] == "transport"
+
+
+def test_expense_pkr_not_overridden_by_inr():
+    """Ensure PKR is not mis-classified as INR (Indian vs Pakistani rupee)."""
+    from ai.inference.expense_parser.expense_extractor import extract_with_regex
+
+    amount, currency = extract_with_regex("total was 1200 PKR at the market")
+
+    assert currency == "PKR"
+    assert currency != "INR"
 
 
 def test_expense_creation():
