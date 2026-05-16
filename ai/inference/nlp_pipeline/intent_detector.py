@@ -124,8 +124,7 @@ Respond in JSON format:
         if result.get("scheduled_time"):
             try:
                 scheduled_time = parse_utc_datetime(result["scheduled_time"])
-            except:
-                # Try to parse common date formats
+            except Exception:
                 scheduled_time = parse_time_from_text(text)
 
         confidence = _normalize_confidence(result.get("confidence", 0.0))

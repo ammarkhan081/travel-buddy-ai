@@ -22,10 +22,11 @@ EXPENSE_CATEGORIES = [
 
 # Currency patterns
 CURRENCY_PATTERNS = {
+    r'PKR|(?<!\w)Rs\.?(?!\w)': 'PKR',  # Pakistani Rupee — checked first (app default)
     r'\$|USD|dollar': 'USD',
     r'€|EUR|euro': 'EUR',
     r'£|GBP|pound': 'GBP',
-    r'₹|INR|rupee': 'INR',
+    r'₹|INR|Indian\s+rupee': 'INR',
     r'¥|JPY|yen': 'JPY',
 }
 
@@ -71,12 +72,13 @@ async def extract_expense_gpt(
 Respond in JSON format:
 {{
     "amount": <number>,
-    "currency": "USD|EUR|GBP|INR|JPY|etc",
+    "currency": "PKR|USD|EUR|GBP|INR|JPY|etc",
     "category": "food|transport|accommodation|shopping|entertainment|other",
     "description": "brief description",
     "location": "location if mentioned or null",
     "confidence": <0-1>
-}}"""
+}}
+Default currency is PKR (Pakistani Rupees) if none is mentioned."""
 
         result_text, used_model = call_chat_with_fallback(
             client=client,
@@ -134,34 +136,27 @@ Respond in JSON format:
 
 def extract_with_regex(text: str) -> tuple:
     """Extract amount and currency using regex patterns."""
-    # Amount patterns
+    # Amount patterns — PKR first since it's the app default currency
     amount_patterns = [
-        r'\$(\d+\.?\d*)',  # $50 or $50.99
-        r'(\d+\.?\d*)\s*(dollars?|USD)',  # 50 dollars
-        r'€(\d+\.?\d*)',  # €50
-        r'(\d+\.?\d*)\s*(euros?|EUR)',  # 50 euros
-        r'£(\d+\.?\d*)',  # £50
-        r'(\d+\.?\d*)\s*(pounds?|GBP)',  # 50 pounds
-        r'₹(\d+\.?\d*)',  # ₹50
-        r'(\d+\.?\d*)\s*(rupees?|INR)',  # 50 rupees
+        (r'(\d+\.?\d*)\s*(PKR|Rs\.?)', 'PKR'),
+        (r'\$(\d+\.?\d*)', 'USD'),
+        (r'(\d+\.?\d*)\s*(dollars?|USD)', 'USD'),
+        (r'€(\d+\.?\d*)', 'EUR'),
+        (r'(\d+\.?\d*)\s*(euros?|EUR)', 'EUR'),
+        (r'£(\d+\.?\d*)', 'GBP'),
+        (r'(\d+\.?\d*)\s*(pounds?|GBP)', 'GBP'),
+        (r'₹(\d+\.?\d*)', 'INR'),
+        (r'(\d+\.?\d*)\s*(Indian\s+rupees?|INR)', 'INR'),
     ]
-    
+
     amount = None
     currency = None
-    
-    for pattern in amount_patterns:
+
+    for pattern, curr in amount_patterns:
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
             amount = float(match.group(1))
-            # Determine currency from pattern
-            if '$' in pattern or 'dollar' in pattern.lower():
-                currency = 'USD'
-            elif '€' in pattern or 'euro' in pattern.lower():
-                currency = 'EUR'
-            elif '£' in pattern or 'pound' in pattern.lower():
-                currency = 'GBP'
-            elif '₹' in pattern or 'rupee' in pattern.lower():
-                currency = 'INR'
+            currency = curr
             break
     
     # If no currency found, check for currency symbols
@@ -176,36 +171,30 @@ def extract_with_regex(text: str) -> tuple:
 
 def extract_all_amounts_with_regex(text: str) -> tuple:
     """Extract all explicit monetary amounts and inferred currency."""
+    # PKR first — app default currency for Pakistan
     amount_patterns = [
-        r'\$(\d+\.?\d*)',
-        r'(\d+\.?\d*)\s*(dollars?|USD)',
-        r'€(\d+\.?\d*)',
-        r'(\d+\.?\d*)\s*(euros?|EUR)',
-        r'£(\d+\.?\d*)',
-        r'(\d+\.?\d*)\s*(pounds?|GBP)',
-        r'₹(\d+\.?\d*)',
-        r'(\d+\.?\d*)\s*(rupees?|INR)',
+        (r'(\d+\.?\d*)\s*(PKR|Rs\.?)', 'PKR'),
+        (r'\$(\d+\.?\d*)', 'USD'),
+        (r'(\d+\.?\d*)\s*(dollars?|USD)', 'USD'),
+        (r'€(\d+\.?\d*)', 'EUR'),
+        (r'(\d+\.?\d*)\s*(euros?|EUR)', 'EUR'),
+        (r'£(\d+\.?\d*)', 'GBP'),
+        (r'(\d+\.?\d*)\s*(pounds?|GBP)', 'GBP'),
+        (r'₹(\d+\.?\d*)', 'INR'),
+        (r'(\d+\.?\d*)\s*(Indian\s+rupees?|INR)', 'INR'),
     ]
 
     amounts = []
     currency = None
 
-    for pattern in amount_patterns:
+    for pattern, curr in amount_patterns:
         for match in re.finditer(pattern, text, re.IGNORECASE):
             try:
                 amounts.append(float(match.group(1)))
             except Exception:
                 continue
-
             if not currency:
-                if '$' in pattern or 'dollar' in pattern.lower():
-                    currency = 'USD'
-                elif '€' in pattern or 'euro' in pattern.lower():
-                    currency = 'EUR'
-                elif '£' in pattern or 'pound' in pattern.lower():
-                    currency = 'GBP'
-                elif '₹' in pattern or 'rupee' in pattern.lower():
-                    currency = 'INR'
+                currency = curr
 
     # Fallback currency inference if symbol/word was present but no direct pattern matched.
     if not currency:
@@ -229,7 +218,7 @@ def _resolve_multi_amount_value(text: str, amounts: list[float]) -> float:
         return amounts[0]
 
     segments = re.split(r"\band\b|\bplus\b|,", text.lower())
-    cues = ("spent", "paid", "cost", "bought", "for", "$", "usd", "eur", "inr", "gbp")
+    cues = ("spent", "paid", "cost", "bought", "for", "$", "pkr", "rs", "usd", "eur", "inr", "gbp")
     segment_amount_counts = 0
     for seg in segments:
         seg_amounts, _ = extract_all_amounts_with_regex(seg)
