@@ -1,0 +1,104 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+# lib/  <-- Commented out to allow access to Flutter lib directory
+# lib64/ <-- Commented out
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+venv/
+env/
+ENV/
+.venv/
+.venv312/
+
+# Environment variables — NEVER commit secrets
+.env
+.env.local
+backend/.env
+
+# Database files (including SQLite WAL mode sidecar files)
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+travel_buddy.db
+
+# Generated diary export files
+backend/diary_files/
+
+# Flutter
+frontend/build/
+frontend/.dart_tool/
+frontend/.flutter-plugins
+frontend/.flutter-plugins-dependencies
+frontend/.packages
+frontend/android/build/
+frontend/ios/Pods/
+frontend/*.lock
+
+# Audio storage
+audio_storage/
+*.wav
+*.mp3
+*.m4a
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Firebase
+firebase-debug.log
+firestore-debug.log
+firebase-service-account.json
+firebase_service_account.json
+*service_account*.json
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Models
+ai/models/*.bin
+ai/models/*.pt
+ai/models/*.h5
+
+# Docker
+.dockerignore
+
+# Build artifacts and local logs
+signing_report.txt
+*.tmp
+*.temp
+
+# Evaluation outputs
+backend/evaluation/results/*.json

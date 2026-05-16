@@ -1,0 +1,60 @@
+Running Gradle task 'assembleDebug'...                          
+Warning: The plugin audioplayers_android requires Android SDK version 35 or higher.
+For more information about build configuration, see https://flutter.dev/to/review-gradle-config.
+Warning: The plugin flutter_plugin_android_lifecycle requires Android SDK version 36 or higher.
+For more information about build configuration, see https://flutter.dev/to/review-gradle-config.
+Warning: The plugin google_sign_in_android requires Android SDK version 36 or higher.
+For more information about build configuration, see https://flutter.dev/to/review-gradle-config.
+Warning: The plugin image_picker_android requires Android SDK version 36 or higher.
+For more information about build configuration, see https://flutter.dev/to/review-gradle-config.
+Warning: The plugin path_provider_android requires Android SDK version 36 or higher.
+For more information about build configuration, see https://flutter.dev/to/review-gradle-config.
+Warning: The plugin permission_handler_android requires Android SDK version 35 or higher.
+For more information about build configuration, see https://flutter.dev/to/review-gradle-config.
+Warning: The plugin record_android requires Android SDK version 36 or higher.
+For more information about build configuration, see https://flutter.dev/to/review-gradle-config.
+Warning: The plugin shared_preferences_android requires Android SDK version 36 or higher.
+For more information about build configuration, see https://flutter.dev/to/review-gradle-config.
+Warning: The plugin url_launcher_android requires Android SDK version 36 or higher.
+For more information about build configuration, see https://flutter.dev/to/review-gradle-config.
+Your project is configured to compile against Android SDK 34, but the following plugin(s) require to be compiled against a higher Android SDK version:
+- audioplayers_android compiles against Android SDK 35
+- flutter_plugin_android_lifecycle compiles against Android SDK 36
+- google_sign_in_android compiles against Android SDK 36
+- image_picker_android compiles against Android SDK 36
+- path_provider_android compiles against Android SDK 36
+- permission_handler_android compiles against Android SDK 35
+- record_android compiles against Android SDK 36
+- shared_preferences_android compiles against Android SDK 36
+- url_launcher_android compiles against Android SDK 36
+Fix this issue by compiling against the highest Android SDK version (they are backward compatible).
+Add the following to F:\Final Year Project\frontend\android\app\build.gradle.kts:
+
+    android {
+        compileSdk = 36
+        ...
+    }
+lib/services/notification_service.dart:94:9: Error: No named parameter with the name 'category'.
+        category: AndroidNotificationCategory.alarm,
+        ^^^^^^^^
+/C:/Users/Ammar%20Khan/AppData/Local/Pub/Cache/hosted/pub.dev/flutter_local_notifications-18.0.1/lib/src/platform_specifics/android/notification_channel.dart:10:9: Context: Found this candidate, but the arguments don't match.
+  const AndroidNotificationChannel(
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+Target kernel_snapshot_program failed: Exception
+
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:compileFlutterBuildDebug'.
+> Process 'command 'C:\flutter\bin\flutter.bat'' finished with non-zero exit value 1
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 10s
+Running Gradle task 'assembleDebug'...                             11.6s
+Gradle task assembleDebug failed with exit code 1

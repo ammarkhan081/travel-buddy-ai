@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "22604099883",
+    "project_id": "travel-buddy-ai-e9b35",
+    "storage_bucket": "travel-buddy-ai-e9b35.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:22604099883:android:37f4bb2b7b56d67584956e",
+        "android_client_info": {
+          "package_name": "com.example.fyp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "22604099883-isqdkjlcihdr7lqo7glogccc9qdf7hm3.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.fyp",
+            "certificate_hash": "18563c4b3f86679a0bae1d54dbbc7742b66107c4"
+          }
+        },
+        {
+          "client_id": "22604099883-kll1gvgm02tur1286jdp6crnrkk0ome3.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBVNpoE0VrVpprNQ3XduTOJ4Oikln86qsY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "22604099883-kll1gvgm02tur1286jdp6crnrkk0ome3.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

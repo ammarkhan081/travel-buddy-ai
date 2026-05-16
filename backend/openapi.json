@@ -1,0 +1,436 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Travel Buddy AI API",
+    "description": "Context-Aware Travel Companion with AI Integration for Productivity and Memory Documentation",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Ammar Ayaz",
+      "email": "22pwbc0950@student.nust.edu.pk"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8000",
+      "description": "Development server"
+    }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "summary": "Root endpoint",
+        "responses": {
+          "200": {
+            "description": "API information"
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health check",
+        "responses": {
+          "200": {
+            "description": "Service is healthy"
+          }
+        }
+      }
+    },
+    "/api/v1/reminders/create": {
+      "post": {
+        "summary": "Create a reminder with AI intent detection",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReminderCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Reminder created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReminderResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/stt/transcribe": {
+      "post": {
+        "summary": "Transcribe audio file to text",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "user_id": {
+                    "type": "string"
+                  },
+                  "language": {
+                    "type": "string",
+                    "default": "en"
+                  },
+                  "use_fallback": {
+                    "type": "boolean",
+                    "default": false
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Transcription successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/diary/generate": {
+      "post": {
+        "summary": "Generate travel diary",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiaryGenerateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Diary generated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiaryResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/expenses/add": {
+      "post": {
+        "summary": "Add expense with AI extraction",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExpenseCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Expense added successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExpenseResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/alerts/upcoming": {
+      "post": {
+        "summary": "Get context-aware alerts",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Alerts retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ReminderCreate": {
+        "type": "object",
+        "required": ["text", "user_id"],
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "string",
+            "enum": ["low", "medium", "high"],
+            "default": "medium"
+          }
+        }
+      },
+      "ReminderResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string"
+          },
+          "intent": {
+            "type": "string"
+          },
+          "scheduled_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "location": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "TranscriptionResponse": {
+        "type": "object",
+        "properties": {
+          "transcript": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "number"
+          },
+          "language": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "duration": {
+            "type": "number"
+          },
+          "word_count": {
+            "type": "integer"
+          }
+        }
+      },
+      "DiaryGenerateRequest": {
+        "type": "object",
+        "required": ["user_id"],
+        "properties": {
+          "user_id": {
+            "type": "string"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "include_reminders": {
+            "type": "boolean",
+            "default": true
+          },
+          "include_notes": {
+            "type": "boolean",
+            "default": true
+          },
+          "include_expenses": {
+            "type": "boolean",
+            "default": true
+          },
+          "format": {
+            "type": "string",
+            "enum": ["json", "pdf", "docx"],
+            "default": "json"
+          }
+        }
+      },
+      "DiaryResponse": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string"
+          },
+          "period": {
+            "type": "object"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "total_summary": {
+            "type": "string"
+          },
+          "file_url": {
+            "type": "string"
+          }
+        }
+      },
+      "ExpenseCreate": {
+        "type": "object",
+        "required": ["text", "user_id"],
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string"
+          },
+          "manual_amount": {
+            "type": "number"
+          },
+          "manual_currency": {
+            "type": "string"
+          }
+        }
+      },
+      "ExpenseResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "user_id": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AlertRequest": {
+        "type": "object",
+        "required": ["user_id", "location"],
+        "properties": {
+          "user_id": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "alert_types": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["weather", "traffic", "news"]
+            },
+            "default": ["weather", "traffic", "news"]
+          }
+        }
+      },
+      "AlertResponse": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "weather": {
+            "type": "object"
+          },
+          "traffic": {
+            "type": "object"
+          },
+          "news": {
+            "type": "object"
+          },
+          "overall_risk_score": {
+            "type": "number"
+          },
+          "recommendations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
