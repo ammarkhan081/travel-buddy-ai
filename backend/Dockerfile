@@ -28,6 +28,6 @@ ENV PYTHONPATH=/app
 # Expose port
 EXPOSE 8000
 
-# Run application
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run application. Cloud platforms usually provide PORT; local Docker falls back to 8000.
+CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
 

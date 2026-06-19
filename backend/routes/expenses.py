@@ -62,7 +62,7 @@ async def add_expense_voice(
         if result.get("intent") != "expense":
             return ExpenseExtraction(
                 amount=0.0,
-                currency="USD",
+                currency="PKR",
                 category="other",
                 description=result.get("transcript", "No expense extracted"),
                 location=None,
@@ -71,10 +71,11 @@ async def add_expense_voice(
         details = result.get("details", {})
         return ExpenseExtraction(
             amount=float(details.get("amount", 0.0)),
-            currency="USD",
+            currency="PKR",
             category=str(details.get("category", "other")),
             description=result.get("transcript", ""),
-            location=None,
+            location=details.get("location"),
+            merchant=details.get("merchant"),
             confidence=float(details.get("confidence", 0.0)),
         )
     except Exception as e:
@@ -131,8 +132,9 @@ async def extract_expense_ocr(
         "Return ONLY a JSON object with these keys: "
         '"amount" (number, total amount paid), '
         '"currency" (string, e.g. USD, PKR), '
-        '"category" (one of: food, transportation, shopping, entertainment, bills, other), '
+        '"category" (one of: food, transport, accommodation, shopping, entertainment, other), '
         '"description" (short string, what was purchased), '
+        '"merchant" (store/restaurant/hotel name printed on the receipt, or null), '
         f'"date" (ISO date string YYYY-MM-DD, today is {today}). '
         "If a field cannot be determined, use null for strings and 0 for numbers. "
         "Do not include any explanation, only the JSON object."
@@ -178,10 +180,11 @@ async def extract_expense_ocr(
     amount = float(parsed.get("amount") or 0.0)
     return ExpenseExtraction(
         amount=amount,
-        currency=str(parsed.get("currency") or "USD"),
+        currency=str(parsed.get("currency") or "PKR"),
         category=str(parsed.get("category") or "other"),
         description=str(parsed.get("description") or ""),
         location=None,
+        merchant=(str(parsed.get("merchant")) if parsed.get("merchant") else None),
         confidence=0.85 if amount > 0 else 0.3,
     )
 

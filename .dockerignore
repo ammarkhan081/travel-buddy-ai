@@ -1,0 +1,43 @@
+# Git and local tooling
+.git/
+.github/
+.idea/
+.vscode/
+.claude/
+
+# Dependency and build artifacts
+node_modules/
+frontend/build/
+frontend/.dart_tool/
+frontend/android/build/
+backend/.venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Secrets and local environment files
+.env
+.env.*
+backend/.env
+backend/.env.*
+firebase_service_account.json
+backend/firebase_service_account.json
+*service_account*.json
+
+# Local databases and generated files
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+diary_files/
+backend/diary_files/
+
+# Local logs and temporary files
+*.log
+*.tmp
+*.temp
+.fuse_hidden*
+frontend/*log*.txt
+frontend/flutter_out.txt
+frontend/flutter_err.txt

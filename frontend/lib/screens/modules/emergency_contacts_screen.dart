@@ -7,6 +7,9 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../models/emergency_contact.dart';
 import '../../services/auth_service.dart';
+import '../../theme/app_colors.dart';
+import '../../widgets/app_header.dart';
+import '../../widgets/module_fab.dart';
 
 class EmergencyContactsScreen extends StatefulWidget {
   const EmergencyContactsScreen({super.key});
@@ -33,80 +36,76 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
     final theme = Theme.of(context);
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
-      appBar: AppBar(
-        title: const Text('Emergency Contacts',
-            style: TextStyle(fontWeight: FontWeight.bold)),
-        backgroundColor: const Color(0xFF1E66F5),
-        foregroundColor: Colors.white,
-        elevation: 0,
-      ),
-      floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: ModuleFab(
+        icon: Icons.person_add,
+        label: 'Add Contact',
+        minWidth: 152,
         onPressed: () => _showAddContactSheet(context),
-        backgroundColor: const Color(0xFF1E66F5),
-        icon: const Icon(Icons.person_add, color: Colors.white),
-        label:
-            const Text('Add Contact', style: TextStyle(color: Colors.white)),
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: _contactsRef.orderBy('createdAt').snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final docs = snapshot.data?.docs ?? [];
-          final contacts =
-              docs.map((d) => EmergencyContact.fromFirestore(d)).toList();
+      body: Column(
+        children: [
+          AppHeader(
+            title: 'Emergency Contacts',
+            subtitle: 'Fast calls and arrival SMS',
+            onBack: () => Navigator.maybePop(context),
+          ),
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: _contactsRef.orderBy('createdAt').snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final docs = snapshot.data?.docs ?? [];
+                final contacts = docs
+                    .map((d) => EmergencyContact.fromFirestore(d))
+                    .toList();
 
-          return Column(
-            children: [
-              // Arrival Banner
-              _buildArrivalBanner(contacts, theme),
-              // Contact List
-              Expanded(
-                child: contacts.isEmpty
-                    ? _buildEmptyState(theme)
-                    : ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-                        itemCount: contacts.length,
-                        separatorBuilder: (context, i) =>
-                            const SizedBox(height: 10),
-                        itemBuilder: (context, index) =>
-                            _ContactCard(
-                              contact: contacts[index],
-                              onDelete: () =>
-                                  _deleteContact(contacts[index].id),
-                              onCall: () =>
-                                  _callContact(contacts[index].phone),
-                              onSms: () =>
-                                  _smsContact(contacts[index], null),
+                return Column(
+                  children: [
+                    _buildArrivalBanner(contacts, theme),
+                    Expanded(
+                      child: contacts.isEmpty
+                          ? _buildEmptyState(theme)
+                          : ListView.separated(
+                              padding: const EdgeInsets.fromLTRB(
+                                16,
+                                0,
+                                16,
+                                100,
+                              ),
+                              itemCount: contacts.length,
+                              separatorBuilder: (context, i) =>
+                                  const SizedBox(height: 10),
+                              itemBuilder: (context, index) => _ContactCard(
+                                contact: contacts[index],
+                                onDelete: () =>
+                                    _deleteContact(contacts[index].id),
+                                onCall: () =>
+                                    _callContact(contacts[index].phone),
+                                onSms: () => _smsContact(contacts[index], null),
+                              ),
                             ),
-                      ),
-              ),
-            ],
-          );
-        },
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildArrivalBanner(
-      List<EmergencyContact> contacts, ThemeData theme) {
+  Widget _buildArrivalBanner(List<EmergencyContact> contacts, ThemeData theme) {
     return Container(
       margin: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF1E66F5), Color(0xFF4EA8FF)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        gradient: AppGradients.primary,
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF1E66F5).withValues(alpha: 0.3),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
-          ),
-        ],
+        boxShadow: theme.brightness == Brightness.dark
+            ? const []
+            : AppShadows.primaryGlow,
       ),
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -139,24 +138,26 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
                 onPressed: contacts.isEmpty
                     ? null
                     : (_sendingArrival
-                        ? null
-                        : () => _sendArrivalToAll(contacts)),
+                          ? null
+                          : () => _sendArrivalToAll(contacts)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.white,
-                  foregroundColor: const Color(0xFF1E66F5),
-                  disabledBackgroundColor:
-                      Colors.white.withValues(alpha: 0.4),
+                  foregroundColor: AppColors.primary,
+                  disabledBackgroundColor: Colors.white.withValues(alpha: 0.4),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
                 ),
                 child: _sendingArrival
                     ? const SizedBox(
                         height: 20,
                         width: 20,
                         child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Color(0xFF1E66F5)))
+                          strokeWidth: 2,
+                          color: AppColors.primary,
+                        ),
+                      )
                     : Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -167,8 +168,9 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
                                 ? 'Add contacts first'
                                 : 'Send Arrival SMS to ${contacts.length} contact${contacts.length > 1 ? 's' : ''}',
                             style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
                           ),
                         ],
                       ),
@@ -181,21 +183,16 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
   }
 
   Widget _buildEmptyState(ThemeData theme) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.contacts_outlined,
-              size: 72,
-              color: theme.colorScheme.primary.withValues(alpha: 0.4)),
-          const SizedBox(height: 16),
-          Text('No emergency contacts',
-              style: theme.textTheme.titleLarge
-                  ?.copyWith(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          Text('Tap "+ Add Contact" to add someone.',
-              style: TextStyle(color: Colors.grey.shade600)),
-        ],
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Center(
+        child: AppEmptyState(
+          icon: Icons.health_and_safety_rounded,
+          title: 'No emergency contacts',
+          subtitle: 'Add someone trusted for calls and arrival SMS.',
+          ctaLabel: 'Add Contact',
+          onCta: () => _showAddContactSheet(context),
+        ),
       ),
     );
   }
@@ -213,8 +210,9 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
       if (perm == LocationPermission.whileInUse ||
           perm == LocationPermission.always) {
         final pos = await Geolocator.getCurrentPosition(
-          locationSettings:
-              const LocationSettings(accuracy: LocationAccuracy.medium),
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.medium,
+          ),
         ).timeout(const Duration(seconds: 5));
         locationText =
             'https://maps.google.com/?q=${pos.latitude},${pos.longitude}';
@@ -240,10 +238,11 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Send Arrival SMS',
-            style: TextStyle(fontWeight: FontWeight.bold)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text(
+          'Send Arrival SMS',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -255,21 +254,27 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
               style: const TextStyle(fontSize: 13, color: Colors.grey),
             ),
             const SizedBox(height: 12),
-            ...contacts.map((c) => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 3),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.person, size: 16,
-                          color: Color(0xFF1E66F5)),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text('${c.name} (${c.phone})',
-                            style: const TextStyle(
-                                fontWeight: FontWeight.w600)),
+            ...contacts.map(
+              (c) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.person,
+                      size: 16,
+                      color: Color(0xFF1E66F5),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        '${c.name} (${c.phone})',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
-                    ],
-                  ),
-                )),
+                    ),
+                  ],
+                ),
+              ),
+            ),
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(10),
@@ -286,15 +291,18 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1E66F5),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10))),
+              backgroundColor: const Color(0xFF1E66F5),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
             child: Text(canSendDirect ? 'Send Automatically' : 'Send to All'),
           ),
         ],
@@ -324,7 +332,8 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-              'Arrival SMS sent to $sentCount contact${sentCount > 1 ? 's' : ''}!'),
+            'Arrival SMS sent to $sentCount contact${sentCount > 1 ? 's' : ''}!',
+          ),
           backgroundColor: Colors.green,
           duration: const Duration(seconds: 3),
         ),
@@ -336,8 +345,10 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
   /// Returns true on success, false on failure.
   Future<bool> _sendDirectSms(String phone, String message) async {
     try {
-      await _smsChannel
-          .invokeMethod('sendSms', {'phone': phone, 'message': message});
+      await _smsChannel.invokeMethod('sendSms', {
+        'phone': phone,
+        'message': message,
+      });
       return true;
     } catch (e) {
       debugPrint('Direct SMS failed for $phone: $e');
@@ -346,7 +357,8 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
   }
 
   Future<void> _smsContact(EmergencyContact contact, String? body) async {
-    final message = body ??
+    final message =
+        body ??
         'Hi ${contact.name}, this is a message from Travio. Please reply if you need to reach me.';
     final uri = Uri(
       scheme: 'sms',
@@ -356,9 +368,9 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri);
     } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open SMS app')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Could not open SMS app')));
     }
   }
 
@@ -374,17 +386,16 @@ class _EmergencyContactsScreenState extends State<EmergencyContactsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Remove Contact'),
-        content:
-            const Text('Remove this emergency contact?'),
+        content: const Text('Remove this emergency contact?'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child:
-                const Text('Remove', style: TextStyle(color: Colors.white)),
+            child: const Text('Remove', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -426,21 +437,26 @@ class _ContactCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final initials = contact.name.isNotEmpty
         ? contact.name
-            .trim()
-            .split(' ')
-            .map((w) => w[0])
-            .take(2)
-            .join()
-            .toUpperCase()
+              .trim()
+              .split(' ')
+              .map((w) => w[0])
+              .take(2)
+              .join()
+              .toUpperCase()
         : '?';
 
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: Colors.grey.shade200),
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(AppRadii.lg),
+        border: Border.all(
+          color: isDark ? AppColors.borderDark : AppColors.borderLight,
+        ),
+        boxShadow: isDark ? const [] : AppShadows.softCard,
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -448,42 +464,59 @@ class _ContactCard extends StatelessWidget {
           children: [
             CircleAvatar(
               radius: 26,
-              backgroundColor:
-                  const Color(0xFF1E66F5).withValues(alpha: 0.12),
-              child: Text(initials,
-                  style: const TextStyle(
-                    color: Color(0xFF1E66F5),
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  )),
+              backgroundColor: AppColors.primary.withValues(alpha: 0.12),
+              child: Text(
+                initials,
+                style: const TextStyle(
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
             ),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(contact.name,
-                      style: const TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.bold)),
+                  Text(
+                    contact.name,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: isDark
+                          ? AppColors.textPrimaryDark
+                          : AppColors.textPrimary,
+                    ),
+                  ),
                   const SizedBox(height: 2),
-                  Text(contact.phone,
-                      style: TextStyle(
-                          fontSize: 13, color: Colors.grey.shade600)),
+                  Text(
+                    contact.phone,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: isDark
+                          ? AppColors.textSecondaryDark
+                          : AppColors.textSecondary,
+                    ),
+                  ),
                   if (contact.relation.isNotEmpty) ...[
                     const SizedBox(height: 2),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 3),
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
                       decoration: BoxDecoration(
-                        color: Colors.blue.withValues(alpha: 0.08),
+                        color: AppColors.infoBlue.withValues(alpha: 0.10),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
                         contact.relation,
                         style: const TextStyle(
-                            fontSize: 11,
-                            color: Colors.blue,
-                            fontWeight: FontWeight.w600),
+                          fontSize: 11,
+                          color: AppColors.infoBlue,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ],
@@ -494,22 +527,25 @@ class _ContactCard extends StatelessWidget {
             Column(
               children: [
                 _ActionBtn(
-                    icon: Icons.call,
-                    color: Colors.green,
-                    tooltip: 'Call',
-                    onTap: onCall),
+                  icon: Icons.call,
+                  color: Colors.green,
+                  tooltip: 'Call',
+                  onTap: onCall,
+                ),
                 const SizedBox(height: 6),
                 _ActionBtn(
-                    icon: Icons.sms,
-                    color: Colors.blue,
-                    tooltip: 'SMS',
-                    onTap: onSms),
+                  icon: Icons.sms,
+                  color: AppColors.infoBlue,
+                  tooltip: 'SMS',
+                  onTap: onSms,
+                ),
                 const SizedBox(height: 6),
                 _ActionBtn(
-                    icon: Icons.delete_outline,
-                    color: Colors.red,
-                    tooltip: 'Remove',
-                    onTap: onDelete),
+                  icon: Icons.delete_outline,
+                  color: Colors.red,
+                  tooltip: 'Remove',
+                  onTap: onDelete,
+                ),
               ],
             ),
           ],
@@ -568,11 +604,15 @@ class _AddContactSheetState extends State<_AddContactSheet> {
   final _formKey = GlobalKey<FormState>();
   final _nameCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
-  final _relationCtrl = TextEditingController();
   bool _saving = false;
 
   static const _relations = [
-    'Father', 'Mother', 'Sibling', 'Spouse', 'Friend', 'Other'
+    'Father',
+    'Mother',
+    'Sibling',
+    'Spouse',
+    'Friend',
+    'Other',
   ];
   String _relation = 'Father';
 
@@ -580,19 +620,26 @@ class _AddContactSheetState extends State<_AddContactSheet> {
   void dispose() {
     _nameCtrl.dispose();
     _phoneCtrl.dispose();
-    _relationCtrl.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     return Padding(
       padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom),
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
       child: Container(
-        decoration: const BoxDecoration(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          color: Colors.white,
+        decoration: BoxDecoration(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          color: theme.colorScheme.surface,
+          border: Border(
+            top: BorderSide(
+              color: isDark ? AppColors.borderDark : AppColors.borderLight,
+            ),
+          ),
         ),
         padding: const EdgeInsets.all(24),
         child: Form(
@@ -608,32 +655,58 @@ class _AddContactSheetState extends State<_AddContactSheet> {
                   height: 4,
                   margin: const EdgeInsets.only(bottom: 20),
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
+                    color: isDark
+                        ? AppColors.borderDark
+                        : AppColors.borderLight,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
               ),
-              const Text('Add Emergency Contact',
-                  style: TextStyle(
-                      fontSize: 20, fontWeight: FontWeight.bold)),
+              Text(
+                'Add Emergency Contact',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: isDark
+                      ? AppColors.textPrimaryDark
+                      : AppColors.textPrimary,
+                ),
+              ),
               const SizedBox(height: 20),
-              _buildField(_nameCtrl, 'Full Name', Icons.person,
-                  'Enter full name', TextInputType.name),
+              _buildField(
+                _nameCtrl,
+                'Full Name',
+                Icons.person,
+                'Enter full name',
+                TextInputType.name,
+              ),
               const SizedBox(height: 14),
-              _buildField(_phoneCtrl, 'Phone Number', Icons.phone,
-                  'e.g. +92 300 1234567', TextInputType.phone,
-                  validator: (v) {
-                if (v == null || v.trim().isEmpty) {
-                  return 'Phone number is required';
-                }
-                if (v.trim().length < 7) return 'Enter a valid phone number';
-                return null;
-              }),
+              _buildField(
+                _phoneCtrl,
+                'Phone Number',
+                Icons.phone,
+                'e.g. +92 300 1234567',
+                TextInputType.phone,
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty) {
+                    return 'Phone number is required';
+                  }
+                  if (v.trim().length < 7) return 'Enter a valid phone number';
+                  return null;
+                },
+              ),
               const SizedBox(height: 14),
               // Relation picker
-              const Text('Relationship',
-                  style: TextStyle(
-                      fontWeight: FontWeight.w600, fontSize: 14)),
+              Text(
+                'Relationship',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                  color: isDark
+                      ? AppColors.textPrimaryDark
+                      : AppColors.textPrimary,
+                ),
+              ),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
@@ -644,16 +717,22 @@ class _AddContactSheetState extends State<_AddContactSheet> {
                     onTap: () => setState(() => _relation = r),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 8),
+                        horizontal: 14,
+                        vertical: 8,
+                      ),
                       decoration: BoxDecoration(
                         color: selected
-                            ? const Color(0xFF1E66F5)
-                            : Colors.grey.shade100,
+                            ? AppColors.primary
+                            : (isDark
+                                  ? AppColors.surfaceDarkElevated
+                                  : AppColors.bgLight),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
                           color: selected
-                              ? const Color(0xFF1E66F5)
-                              : Colors.grey.shade300,
+                              ? AppColors.primary
+                              : (isDark
+                                    ? AppColors.borderDark
+                                    : AppColors.borderLight),
                         ),
                       ),
                       child: Text(
@@ -663,7 +742,9 @@ class _AddContactSheetState extends State<_AddContactSheet> {
                           fontWeight: FontWeight.w600,
                           color: selected
                               ? Colors.white
-                              : Colors.grey.shade700,
+                              : (isDark
+                                    ? AppColors.textSecondaryDark
+                                    : AppColors.textSecondary),
                         ),
                       ),
                     ),
@@ -676,21 +757,29 @@ class _AddContactSheetState extends State<_AddContactSheet> {
                 child: ElevatedButton(
                   onPressed: _saving ? null : _save,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1E66F5),
+                    backgroundColor: AppColors.primary,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14)),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                   ),
                   child: _saving
                       ? const SizedBox(
                           height: 20,
                           width: 20,
                           child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white))
-                      : const Text('Save Contact',
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text(
+                          'Save Contact',
                           style: TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.bold)),
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                 ),
               ),
               const SizedBox(height: 8),
@@ -709,21 +798,23 @@ class _AddContactSheetState extends State<_AddContactSheet> {
     TextInputType type, {
     String? Function(String?)? validator,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return TextFormField(
       controller: ctrl,
       keyboardType: type,
-      validator: validator ??
-          (v) => (v == null || v.trim().isEmpty)
-              ? '$label is required'
-              : null,
+      validator:
+          validator ??
+          (v) => (v == null || v.trim().isEmpty) ? '$label is required' : null,
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
-        prefixIcon: Icon(icon, color: const Color(0xFF1E66F5)),
+        prefixIcon: Icon(icon, color: AppColors.primary),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey.shade300),
+          borderSide: BorderSide(
+            color: isDark ? AppColors.borderDark : AppColors.borderLight,
+          ),
         ),
       ),
     );
@@ -746,8 +837,9 @@ class _AddContactSheetState extends State<_AddContactSheet> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text('Error saving contact: $e'),
-              backgroundColor: Colors.red),
+            content: Text('Error saving contact: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } finally {

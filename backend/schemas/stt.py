@@ -25,6 +25,8 @@ class VoiceNoteResponse(BaseModel):
     transcript: str
     keywords: Optional[str] = None
     timestamp: str
+    trip_id: Optional[int] = None
+    location: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -34,4 +36,3 @@ class VoiceNoteCreateFromTextRequest(BaseModel):
     """Schema to save an already-transcribed note without re-running STT."""
     transcript: str = Field(..., description="Transcribed text")
     keywords: Optional[str] = Field(None, description="Optional comma-separated keywords")
-

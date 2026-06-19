@@ -7,7 +7,7 @@ import asyncio
 from pathlib import Path
 from typing import Dict, Optional
 import openai
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import re
 from backend.utils.ai_runtime import call_chat_with_fallback
 from backend.utils.error_policy import IntentError
@@ -42,7 +42,8 @@ except ImportError:
 async def detect_intent_gpt(
     text: str,
     api_key: Optional[str] = None,
-    model: Optional[str] = None
+    model: Optional[str] = None,
+    user_local_time: Optional[str] = None,
 ) -> Dict:
     """
     Detect intent and extract entities using OpenAI GPT-4 Turbo.
@@ -84,27 +85,51 @@ async def detect_intent_gpt(
         
         client = openai.OpenAI(api_key=api_key, timeout=30.0)
         
+        if user_local_time:
+            time_context = f"Current user local time: {user_local_time}"
+        else:
+            # Pakistan-specific app: when the client doesn't send its local time,
+            # resolve relative times in Pakistan Standard Time (UTC+5, no DST)
+            # rather than UTC, so "at 4pm" means 4pm in Pakistan.
+            _pk_now = datetime.now(timezone(timedelta(hours=5)))
+            time_context = (
+                f"Current user local time: {_pk_now.strftime('%Y-%m-%dT%H:%M:%S')}+05:00 "
+                "(Asia/Karachi, Pakistan)"
+            )
+
         prompt = f"""Analyze the following text and extract:
 1. Intent (reminder, note, query, expense, other)
-2. Scheduled time/date if mentioned (ISO format)
+2. Scheduled time/date if mentioned — convert to UTC and include the Z suffix
 3. Location if mentioned
 4. Priority (low, medium, high) if mentioned
 5. Any other relevant entities
+
+{time_context}
+
+CRITICAL TIME RULES:
+- Use the user local time above as "now" to resolve all time references.
+- If the user says "at 4pm" or "at 9am" with NO day mentioned, assume they mean TODAY.
+  Example: user_local_time = 2026-05-24T14:00:00+05:00, "at 4pm" → 2026-05-24T16:00:00+05:00 → UTC 2026-05-24T11:00:00Z
+- If the mentioned time has already passed today, assume TOMORROW.
+- Always convert the final answer to UTC with Z suffix.
+- "today at 4pm" means the same as "at 4pm today" — both refer to today at that hour.
+- Be highly confident (≥0.85) when a clear time is stated even without an explicit day.
 
 Text: "{text}"
 
 Respond in JSON format:
 {{
     "intent": "reminder|note|query|expense|other",
-    "scheduled_time": "YYYY-MM-DDTHH:MM:SS or null",
+    "scheduled_time": "YYYY-MM-DDTHH:MM:SSZ or null",
     "location": "location name or null",
     "priority": "low|medium|high",
     "confidence": <0-1>,
-    "title": "brief summary",
+    "title": "brief summary of the reminder",
     "entities": {{}}
 }}"""
 
-        result_text, used_model = call_chat_with_fallback(
+        result_text, used_model = await asyncio.to_thread(
+            call_chat_with_fallback,
             client=client,
             messages=[
                 {"role": "system", "content": "You are an expert at extracting intent and entities from travel-related text. Always respond with valid JSON."},
@@ -338,12 +363,22 @@ def detect_intent_spacy(text: str) -> Dict:
     }
 
 
-def parse_time_from_text(text: str) -> Optional[datetime]:
-    """Parse time from text using regex patterns."""
-    from datetime import datetime, timedelta
-    
+def parse_time_from_text(
+    text: str, reference_dt: Optional[datetime] = None
+) -> Optional[datetime]:
+    """Parse time from text using regex patterns.
+
+    reference_dt: the user's current local datetime (timezone-aware). When
+    provided it is used as "now" so relative phrases resolve in the correct
+    timezone. Falls back to the server clock when omitted.
+    """
+    from datetime import datetime, timedelta, timezone
+
     text_lower = text.lower()
-    now = datetime.now()
+    # Pakistan-specific default: when the caller doesn't pass the user's local
+    # reference time, treat "now" as Pakistan Standard Time (UTC+5, no DST)
+    # instead of the server's local clock (which is UTC in most deployments).
+    now = reference_dt if reference_dt is not None else datetime.now(timezone(timedelta(hours=5)))
 
     def _parse_hour_minute(match: re.Match) -> tuple[int, int]:
         hour = int(match.group(1))
@@ -370,7 +405,7 @@ def parse_time_from_text(text: str) -> Optional[datetime]:
                 if not (0 <= hour <= 23 and 0 <= minute <= 59):
                     return None
                 base = now + timedelta(days=day_offset)
-                return base.replace(hour=hour, minute=minute, second=0, microsecond=0, tzinfo=now.astimezone().tzinfo)
+                return base.replace(hour=hour, minute=minute, second=0, microsecond=0, tzinfo=now.tzinfo)
             except Exception:
                 return None
 
@@ -393,7 +428,7 @@ def parse_time_from_text(text: str) -> Optional[datetime]:
         if days_ahead == 0 or is_next:
             days_ahead = max(days_ahead, 7)
         dt = now + timedelta(days=days_ahead)
-        return dt.replace(hour=hour, minute=minute, second=0, microsecond=0, tzinfo=now.astimezone().tzinfo)
+        return dt.replace(hour=hour, minute=minute, second=0, microsecond=0, tzinfo=now.tzinfo)
 
     # in 2 hours / in 45 minutes
     m = re.search(r"in\s+(\d+)\s+(hours?|minutes?)", text_lower)
@@ -404,6 +439,38 @@ def parse_time_from_text(text: str) -> Optional[datetime]:
             if "hour" in unit:
                 return now + timedelta(hours=value)
             return now + timedelta(minutes=value)
+        except Exception:
+            return None
+
+    # ── "at 4pm" / "at 4:00 am" / "at 16:30" — no day word ─────────────────
+    # When no day is mentioned, use today; if the time already passed, use tomorrow.
+    m = re.search(r"\bat\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b", text_lower)
+    if m:
+        try:
+            hour, minute = _parse_hour_minute(m)
+            if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                return None
+            # Build candidate for today
+            candidate = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            # Push to tomorrow if that moment has already passed
+            if candidate <= now:
+                candidate = candidate + timedelta(days=1)
+            return candidate
+        except Exception:
+            return None
+
+    # ── Bare "4pm" / "4:30am" / "4 pm" — absolute last resort ───────────────
+    # Requires an explicit am/pm marker to avoid matching bare numbers.
+    m = re.search(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b", text_lower)
+    if m:
+        try:
+            hour, minute = _parse_hour_minute(m)
+            if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                return None
+            candidate = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            if candidate <= now:
+                candidate = candidate + timedelta(days=1)
+            return candidate
         except Exception:
             return None
 

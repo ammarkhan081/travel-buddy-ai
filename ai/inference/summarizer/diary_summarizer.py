@@ -1,5 +1,6 @@
 """Travel diary summarization using OpenAI models with strict production fallback behavior."""
 
+import asyncio
 import json
 import logging
 import os
@@ -105,7 +106,8 @@ Respond in JSON format:
 }}"""
 
     try:
-        result_text, used_model = call_chat_with_fallback(
+        result_text, used_model = await asyncio.to_thread(
+            call_chat_with_fallback,
             client=client,
             messages=[
                 {

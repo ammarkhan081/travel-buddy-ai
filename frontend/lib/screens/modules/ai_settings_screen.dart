@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../../config/app_config.dart';
+import '../../theme/app_colors.dart';
+import '../../widgets/app_header.dart';
 
 class AiSettingsScreen extends StatefulWidget {
   const AiSettingsScreen({super.key});
@@ -40,7 +43,8 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
     _baseUrlController.text =
         prefs.getString('ai.baseUrl') ?? AppConfig.baseUrl;
     _apiKeyController.text = prefs.getString('ai.apiKey') ?? '';
-    _modelController.text = prefs.getString('ai.model') ??
+    _modelController.text =
+        prefs.getString('ai.model') ??
         (_provider == 'gemini' ? 'gemini-1.5-flash' : 'gpt-4o-mini');
 
     if (mounted) setState(() => _loading = false);
@@ -55,9 +59,9 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
       await prefs.setString('ai.apiKey', _apiKeyController.text.trim());
       await prefs.setString('ai.model', _modelController.text.trim());
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('AI settings saved.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('AI settings saved.')));
       Navigator.pop(context);
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -67,125 +71,201 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
 
     if (_loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('AI Settings')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
+      backgroundColor: theme.scaffoldBackgroundColor,
+      body: Column(
         children: [
-          // Info card explaining how AI is powered
-          Container(
-            padding: const EdgeInsets.all(14),
-            margin: const EdgeInsets.only(bottom: 20),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.primaryContainer.withValues(alpha: 0.55),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: theme.colorScheme.primary.withValues(alpha: 0.25),
-              ),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          AppHeader(
+            title: 'AI Settings',
+            subtitle: 'Configure chat intelligence safely',
+            onBack: () => Navigator.maybePop(context),
+          ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
               children: [
-                Icon(Icons.info_outline,
-                    color: theme.colorScheme.primary, size: 20),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'The main Travel Buddy chat uses the backend server — AI keys '
-                    'are managed server-side. These settings let you configure the '
-                    'backend URL or enable a direct Google Gemini connection.',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: theme.colorScheme.onPrimaryContainer,
-                      height: 1.4,
-                    ),
+                _infoCard(isDark),
+                const SizedBox(height: 14),
+                _settingsCard(
+                  theme: theme,
+                  isDark: isDark,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _sectionLabel('Connection mode', isDark),
+                      const SizedBox(height: 10),
+                      DropdownButtonFormField<String>(
+                        initialValue: _provider,
+                        decoration: const InputDecoration(labelText: 'Mode'),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'openai',
+                            child: Text('Backend Server (recommended)'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'gemini',
+                            child: Text('Google Gemini (direct)'),
+                          ),
+                        ],
+                        onChanged: (v) {
+                          if (v == null) return;
+                          setState(() {
+                            _provider = v;
+                            if (_provider == 'openai') {
+                              if (_baseUrlController.text.trim().isEmpty) {
+                                _baseUrlController.text = AppConfig.baseUrl;
+                              }
+                              if (_modelController.text.trim().isEmpty) {
+                                _modelController.text = 'gpt-4o-mini';
+                              }
+                            } else if (_modelController.text.trim().isEmpty) {
+                              _modelController.text = 'gemini-1.5-flash';
+                            }
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      if (_provider == 'openai') ...[
+                        TextField(
+                          controller: _baseUrlController,
+                          decoration: const InputDecoration(
+                            labelText: 'Backend URL',
+                            hintText: 'http://localhost:8000',
+                            helperText:
+                                'Address of the Travel Buddy backend server.',
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: _modelController,
+                          decoration: const InputDecoration(
+                            labelText: 'Model (optional)',
+                            hintText: 'gpt-4o-mini',
+                            helperText: 'Override the backend default model.',
+                          ),
+                        ),
+                      ],
+                      if (_provider == 'gemini') ...[
+                        TextField(
+                          controller: _modelController,
+                          decoration: const InputDecoration(
+                            labelText: 'Model',
+                            hintText: 'gemini-1.5-flash',
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: _apiKeyController,
+                          obscureText: true,
+                          decoration: const InputDecoration(
+                            labelText: 'Gemini API Key',
+                            hintText: 'Paste your Google AI Studio API key',
+                            helperText: 'Stored locally on this device only.',
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+                SizedBox(
+                  height: 52,
+                  child: ElevatedButton.icon(
+                    onPressed: _saving ? null : _save,
+                    icon: _saving
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.save_rounded),
+                    label: Text(_saving ? 'Saving...' : 'Save settings'),
                   ),
                 ),
               ],
             ),
           ),
-          DropdownButtonFormField<String>(
-            value: _provider,
-            decoration: const InputDecoration(labelText: 'Mode'),
-            items: const [
-              DropdownMenuItem(
-                value: 'openai',
-                child: Text('Backend Server (recommended)'),
-              ),
-              DropdownMenuItem(
-                value: 'gemini',
-                child: Text('Google Gemini (direct)'),
-              ),
-            ],
-            onChanged: (v) {
-              if (v == null) return;
-              setState(() {
-                _provider = v;
-                if (_provider == 'openai') {
-                  if (_baseUrlController.text.trim().isEmpty) {
-                    _baseUrlController.text = AppConfig.baseUrl;
-                  }
-                  if (_modelController.text.trim().isEmpty) {
-                    _modelController.text = 'gpt-4o-mini';
-                  }
-                } else {
-                  if (_modelController.text.trim().isEmpty) {
-                    _modelController.text = 'gemini-1.5-flash';
-                  }
-                }
-              });
-            },
+        ],
+      ),
+    );
+  }
+
+  Widget _infoCard(bool isDark) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: AppGradients.primary,
+        borderRadius: BorderRadius.circular(AppRadii.lg),
+        boxShadow: isDark ? const [] : AppShadows.primaryGlow,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(AppRadii.sm),
+            ),
+            child: const Icon(
+              Icons.auto_awesome_rounded,
+              color: Colors.white,
+              size: 20,
+            ),
           ),
-          const SizedBox(height: 16),
-          if (_provider == 'openai') ...[
-            TextField(
-              controller: _baseUrlController,
-              decoration: const InputDecoration(
-                labelText: 'Backend URL',
-                hintText: 'http://localhost:8000',
-                helperText: 'Address of the Travel Buddy backend server.',
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Text(
+              'The main Travel Buddy chat uses the backend server. AI keys stay server-side. These settings only adjust the backend URL or enable an optional direct Gemini connection.',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                height: 1.35,
+                fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _modelController,
-              decoration: const InputDecoration(
-                labelText: 'Model (optional)',
-                hintText: 'gpt-4o-mini',
-                helperText: 'Override the backend default model.',
-              ),
-            ),
-          ],
-          if (_provider == 'gemini') ...[
-            TextField(
-              controller: _modelController,
-              decoration: const InputDecoration(
-                labelText: 'Model',
-                hintText: 'gemini-1.5-flash',
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _apiKeyController,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Gemini API Key',
-                hintText: 'Paste your Google AI Studio API key',
-                helperText: 'Stored locally on this device only.',
-              ),
-            ),
-          ],
-          const SizedBox(height: 24),
-          ElevatedButton(
-            onPressed: _saving ? null : _save,
-            child: Text(_saving ? 'Saving...' : 'Save'),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _settingsCard({
+    required ThemeData theme,
+    required bool isDark,
+    required Widget child,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(AppRadii.lg),
+        border: Border.all(
+          color: isDark ? AppColors.borderDark : AppColors.borderLight,
+        ),
+        boxShadow: isDark ? const [] : AppShadows.softCard,
+      ),
+      child: child,
+    );
+  }
+
+  Widget _sectionLabel(String text, bool isDark) {
+    return Text(
+      text,
+      style: TextStyle(
+        fontSize: 12.5,
+        fontWeight: FontWeight.w800,
+        color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondary,
       ),
     );
   }

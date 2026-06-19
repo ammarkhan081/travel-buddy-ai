@@ -26,24 +26,43 @@ logger = logging.getLogger(__name__)
 async def create_reminder(db: Session, reminder_data: ReminderCreate) -> Reminder:
     """Create a new manual reminder with optional intent detection."""
     try:
-        # Detect intent if title looks like a sentence
+        # Detect intent if title looks like a sentence. This is a best-effort
+        # enhancement only — a manual reminder MUST still save even if the AI
+        # call fails (no key, rate limit, network), so failures are swallowed.
         intent = "manual"
         if len(reminder_data.title.split()) > 2:
-            intent_dict = await detect_intent_gpt(reminder_data.title)
-            intent = intent_dict.get("intent", "manual")
+            try:
+                intent_dict = await detect_intent_gpt(reminder_data.title)
+                intent = intent_dict.get("intent", "manual")
+            except Exception as intent_err:
+                logger.warning(f"Manual reminder intent detection skipped: {intent_err}")
+                intent = "manual"
             
         dt_utc = to_utc_iso(reminder_data.datetime)
+        user_id = getattr(reminder_data, 'user_id', 'default')
+        created_iso = now_utc_iso()
+
+        # Resolve trip (explicit > active trip at creation time).
+        trip_id = getattr(reminder_data, "trip_id", None)
+        if trip_id is None:
+            try:
+                from .trip_service import resolve_trip_id_for_new_record
+            except ImportError:
+                from services.trip_service import resolve_trip_id_for_new_record
+            trip_id = resolve_trip_id_for_new_record(db, user_id, created_iso)
+
         db_reminder = Reminder(
             title=reminder_data.title,
             text=reminder_data.title, # Using title as text fallback
             datetime=dt_utc,
-            user_id=getattr(reminder_data, 'user_id', 'default'),
+            user_id=user_id,
             intent=intent,
             transcript=None,
             location=getattr(reminder_data, 'location', None),
             priority=getattr(reminder_data, 'priority', 'medium'),
             status="pending",
-            created_at=now_utc_iso()
+            created_at=created_iso,
+            trip_id=trip_id,
         )
         db.add(db_reminder)
         db.commit()

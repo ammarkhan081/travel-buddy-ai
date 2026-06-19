@@ -1,12 +1,16 @@
 import 'dart:io';
-import 'package:flutter/material.dart';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
-import '../../services/fastapi_service.dart';
+
 import '../../services/api_exceptions.dart';
+import '../../services/fastapi_service.dart';
+import '../../theme/app_colors.dart';
 import '../../utils/ui_utils.dart';
+import '../../widgets/app_header.dart';
 
 class EditDiaryEntry extends StatefulWidget {
   final String? entryId;
@@ -152,43 +156,55 @@ class _EditDiaryEntryState extends State<EditDiaryEntry> {
     final isNewEntry = widget.entryId == null;
 
     return Scaffold(
-      backgroundColor: theme.colorScheme.surface,
-      appBar: AppBar(
-        title: Text(
-          isNewEntry ? 'New Memory' : 'Edit Memory',
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        backgroundColor: theme.colorScheme.surface,
-        foregroundColor: theme.colorScheme.onSurface,
-        elevation: 0,
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 8.0),
-            child: TextButton.icon(
-              onPressed: _isSaving ? null : _saveEntry,
-              icon: _isSaving
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.check_circle_outline),
-              label: Text(_isSaving ? 'Saving' : 'Save'),
-              style: TextButton.styleFrom(
-                foregroundColor: theme.colorScheme.primary,
-                textStyle: const TextStyle(fontWeight: FontWeight.bold),
+      backgroundColor: theme.scaffoldBackgroundColor,
+      body: Column(
+        children: [
+          AppHeader(
+            title: isNewEntry ? 'New Memory' : 'Edit Memory',
+            subtitle: isNewEntry
+                ? 'Capture today\'s moment'
+                : 'Update your diary entry',
+            onBack: () => Navigator.maybePop(context),
+            trailing: Material(
+              color: AppColors.primary,
+              borderRadius: BorderRadius.circular(AppRadii.sm),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(AppRadii.sm),
+                onTap: _isSaving ? null : _saveEntry,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 11),
+                  child: _isSaving
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                                Colors.white),
+                          ),
+                        )
+                      : const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.check, color: Colors.white, size: 16),
+                            SizedBox(width: 4),
+                            Text(
+                              'Save',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                ),
               ),
             ),
           ),
-        ],
-      ),
-      body: Container(
-        height: double.infinity,
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
-        ),
-        child: SingleChildScrollView(
+          Expanded(
+            child: SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
           padding: const EdgeInsets.all(24.0),
           child: Form(
@@ -200,7 +216,7 @@ class _EditDiaryEntryState extends State<EditDiaryEntry> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: theme.colorScheme.primaryContainer.withOpacity(0.5),
+                    color: theme.colorScheme.primaryContainer.withValues(alpha: 0.5),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Row(
@@ -229,7 +245,7 @@ class _EditDiaryEntryState extends State<EditDiaryEntry> {
                     hintStyle: TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
-                      color: theme.colorScheme.onSurfaceVariant.withOpacity(0.4),
+                      color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
                     ),
                     border: InputBorder.none,
                     enabledBorder: InputBorder.none,
@@ -250,7 +266,7 @@ class _EditDiaryEntryState extends State<EditDiaryEntry> {
                   },
                 ),
                 const SizedBox(height: 8),
-                Divider(color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
+                Divider(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5)),
                 const SizedBox(height: 16),
 
                 // Image Selection Section
@@ -263,7 +279,7 @@ class _EditDiaryEntryState extends State<EditDiaryEntry> {
                       borderRadius: BorderRadius.circular(20),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.1),
+                          color: Colors.black.withValues(alpha: 0.1),
                           blurRadius: 10,
                           offset: const Offset(0, 5),
                         ),
@@ -282,7 +298,7 @@ class _EditDiaryEntryState extends State<EditDiaryEntry> {
                           right: 8,
                           top: 8,
                           child: CircleAvatar(
-                            backgroundColor: Colors.black.withOpacity(0.5),
+                            backgroundColor: Colors.black.withValues(alpha: 0.5),
                             child: IconButton(
                               icon: const Icon(Icons.close, color: Colors.white),
                               onPressed: () => setState(() {
@@ -303,7 +319,7 @@ class _EditDiaryEntryState extends State<EditDiaryEntry> {
                       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
                       decoration: BoxDecoration(
                         border: Border.all(
-                          color: theme.colorScheme.outlineVariant.withOpacity(0.8),
+                          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.8),
                           style: BorderStyle.solid,
                         ),
                         borderRadius: BorderRadius.circular(15),
@@ -334,7 +350,7 @@ class _EditDiaryEntryState extends State<EditDiaryEntry> {
                     hintText: 'Start writing your thoughts here...',
                     hintStyle: TextStyle(
                       fontSize: 17,
-                      color: theme.colorScheme.onSurfaceVariant.withOpacity(0.5),
+                      color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
                     ),
                     border: InputBorder.none,
                     enabledBorder: InputBorder.none,
@@ -369,7 +385,7 @@ class _EditDiaryEntryState extends State<EditDiaryEntry> {
                         borderRadius: BorderRadius.circular(18),
                       ),
                       elevation: 2,
-                      shadowColor: theme.colorScheme.primary.withOpacity(0.4),
+                      shadowColor: theme.colorScheme.primary.withValues(alpha: 0.4),
                     ),
                     child: _isSaving
                         ? const CircularProgressIndicator(color: Colors.white)
@@ -377,7 +393,7 @@ class _EditDiaryEntryState extends State<EditDiaryEntry> {
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Icon(Icons.save_outlined),
-                              const SizedBox(width: 12),
+                              SizedBox(width: 12),
                               Text(
                                 'Save Entry',
                                 style: TextStyle(
@@ -395,6 +411,8 @@ class _EditDiaryEntryState extends State<EditDiaryEntry> {
             ),
           ),
         ),
+          ),
+        ],
       ),
     );
   }

@@ -1,5 +1,6 @@
 """Expense extraction using GPT-4 Turbo NER + Regex hybrid."""
 
+import asyncio
 import logging
 import json
 import re
@@ -75,12 +76,15 @@ Respond in JSON format:
     "currency": "PKR|USD|EUR|GBP|INR|JPY|etc",
     "category": "food|transport|accommodation|shopping|entertainment|other",
     "description": "brief description",
-    "location": "location if mentioned or null",
+    "location": "city/area if mentioned or null",
+    "merchant": "hotel/restaurant/shop/place name if mentioned or null",
     "confidence": <0-1>
 }}
-Default currency is PKR (Pakistani Rupees) if none is mentioned."""
+Default currency is PKR (Pakistani Rupees) if none is mentioned.
+For "merchant" capture the specific place name if stated (e.g. "Shangrila Resort", "Cafe de Hunza"); otherwise null."""
 
-        result_text, used_model = call_chat_with_fallback(
+        result_text, used_model = await asyncio.to_thread(
+            call_chat_with_fallback,
             client=client,
             messages=[
                 {"role": "system", "content": "You are an expert at extracting expense information from text. Always respond with valid JSON."},
@@ -122,6 +126,7 @@ Default currency is PKR (Pakistani Rupees) if none is mentioned."""
             "category": category.lower(),
             "description": result.get("description", text[:100]),
             "location": result.get("location"),
+            "merchant": result.get("merchant"),
             "confidence": result.get("confidence", 0.85),
             "model_used": used_model,
         }
@@ -238,7 +243,7 @@ def _validate_expense_payload(payload: Dict) -> Dict:
         payload["amount"] = 0.0
     if payload["amount"] < 0:
         payload["amount"] = 0.0
-    payload["currency"] = str(payload.get("currency", "USD")).upper()
+    payload["currency"] = str(payload.get("currency", "PKR")).upper()
     payload["category"] = str(payload.get("category", "other")).lower()
     if payload["category"] not in EXPENSE_CATEGORIES:
         payload["category"] = "other"
@@ -263,8 +268,8 @@ def extract_with_regex_hybrid(text: str) -> Dict:
             amount = float(numbers[0])
     
     if not currency:
-        currency = "USD"  # Default
-    
+        currency = "PKR"  # Default to PKR (this app is Pakistan-specific)
+
     category = classify_category(text)
     
     return {
@@ -294,4 +299,3 @@ def classify_category(text: str) -> str:
             return category
     
     return "other"
-

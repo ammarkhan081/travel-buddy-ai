@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../models/chat_conversation.dart';
-import '../../models/chat_message.dart';
 import '../../services/api_exceptions.dart';
 import '../../services/chat_repository.dart';
+import '../../theme/app_colors.dart';
 import 'ai_settings_screen.dart';
 
 /// Travel Buddy AI chat - ChatGPT-style.
@@ -22,6 +22,7 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final ChatRepository _repo = ChatRepository();
   final TextEditingController _messageController = TextEditingController();
+  final TextEditingController _conversationSearchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
@@ -34,6 +35,7 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isSending = false;
   bool _isAiTyping = false;
   int _aiRequestId = 0;
+  int _messageLoadRequestId = 0;
   String? _loadError;
 
   static const String _welcomeText =
@@ -49,14 +51,28 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    _conversationSearchController.addListener(() {
+      if (mounted) setState(() {});
+    });
     _loadConversations(autoSelectFirst: true);
   }
 
   @override
   void dispose() {
     _messageController.dispose();
+    _conversationSearchController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  List<ChatConversation> get _filteredConversations {
+    final query = _conversationSearchController.text.trim().toLowerCase();
+    if (query.isEmpty) return _conversations;
+    return _conversations
+        .where((c) =>
+            c.title.toLowerCase().contains(query) ||
+            (c.lastLocation ?? '').toLowerCase().contains(query))
+        .toList(growable: true);
   }
 
   Future<void> _loadConversations({bool autoSelectFirst = false}) async {
@@ -69,7 +85,8 @@ class _ChatScreenState extends State<ChatScreen> {
       final convs = await _repo.listConversations();
       if (!mounted) return;
       setState(() {
-        _conversations = convs;
+        // Wrap in a growable copy so we can later insert/remove safely.
+        _conversations = List<ChatConversation>.from(convs);
         _isLoadingConversations = false;
       });
       if (autoSelectFirst && convs.isNotEmpty && _currentConversation == null) {
@@ -86,15 +103,23 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _openConversation(ChatConversation conv) async {
     if (!mounted) return;
+    final requestId = ++_messageLoadRequestId;
     setState(() {
       _currentConversation = conv;
       _isLoadingMessages = true;
       _messages = <_LocalMessage>[];
     });
-    Navigator.of(context).maybePop();
+    // Close the drawer via the Scaffold, not the Navigator: the drawer is part
+    // of the Scaffold tree, not a pushed route, so Navigator.pop() would pop
+    // the entire chat screen instead.
+    if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
+      _scaffoldKey.currentState!.closeDrawer();
+      await Future<void>.delayed(const Duration(milliseconds: 220));
+      if (!mounted || requestId != _messageLoadRequestId) return;
+    }
     try {
       final fetched = await _repo.getMessages(conv.id);
-      if (!mounted) return;
+      if (!mounted || requestId != _messageLoadRequestId) return;
       setState(() {
         _messages = fetched
             .map((m) => _LocalMessage(
@@ -102,12 +127,13 @@ class _ChatScreenState extends State<ChatScreen> {
                   isUser: m.isUser,
                   timestamp: m.createdAt,
                 ))
-            .toList();
+            .where((m) => !_isOldFixedLengthError(m))
+            .toList(growable: true);
         _isLoadingMessages = false;
       });
       _scrollToBottom();
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || requestId != _messageLoadRequestId) return;
       setState(() {
         _isLoadingMessages = false;
         _messages = <_LocalMessage>[
@@ -123,11 +149,34 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _startNewChat() async {
     if (!mounted) return;
+    _messageLoadRequestId++;
     setState(() {
       _currentConversation = null;
       _messages = <_LocalMessage>[];
+      _isLoadingMessages = false;
     });
-    Navigator.of(context).maybePop();
+    // Same reason as _openConversation: close the drawer through the Scaffold
+    // so we don't accidentally pop the chat screen.
+    if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
+      _scaffoldKey.currentState!.closeDrawer();
+    }
+    try {
+      final conv = await _repo.createConversation();
+      if (!mounted) return;
+      setState(() {
+        _currentConversation = conv;
+        final updatedConversations = <ChatConversation>[
+          conv,
+          ..._conversations.where((c) => c.id != conv.id),
+        ]..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+        _conversations = updatedConversations;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_assistantFailureMessage(e))),
+      );
+    }
   }
 
   Future<void> _deleteConversation(ChatConversation conv) async {
@@ -151,7 +200,7 @@ class _ChatScreenState extends State<ChatScreen> {
       await _repo.deleteConversation(conv.id);
       if (!mounted) return;
       setState(() {
-        _conversations.removeWhere((c) => c.id == conv.id);
+        _conversations = _conversations.where((c) => c.id != conv.id).toList(growable: true);
         if (_currentConversation?.id == conv.id) {
           _currentConversation = null;
           _messages = <_LocalMessage>[];
@@ -165,6 +214,40 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<void> _renameConversation(ChatConversation conv) async {
+    // The dialog owns its own TextEditingController (via a StatefulWidget) so the
+    // controller is disposed at exactly the right time — when the dialog leaves
+    // the tree. Disposing it manually right after showDialog() returns (while the
+    // dialog is still animating out) caused "TextEditingController used after
+    // disposed" and a cascade of framework errors (_dependents.isEmpty / dirty
+    // build scope / duplicate GlobalKeys / red screen).
+    final title = await showDialog<String>(
+      context: context,
+      builder: (ctx) => _RenameChatDialog(initialTitle: conv.title),
+    );
+    final clean = title?.trim();
+    if (clean == null || clean.isEmpty || clean == conv.title) return;
+
+    try {
+      final updated = await _repo.renameConversation(conv.id, clean);
+      if (!mounted) return;
+      setState(() {
+        _conversations = _conversations
+            .map((c) => c.id == updated.id ? updated : c)
+            .toList(growable: true)
+          ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+        if (_currentConversation?.id == updated.id) {
+          _currentConversation = updated;
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to rename: ${_humanise(e)}')),
+      );
+    }
+  }
+
   Future<void> _sendMessage([String? quickText]) async {
     final text = (quickText ?? _messageController.text).trim();
     if (text.isEmpty || _isSending) return;
@@ -172,7 +255,10 @@ class _ChatScreenState extends State<ChatScreen> {
 
     final now = DateTime.now();
     setState(() {
-      _messages.add(_LocalMessage(text: text, isUser: true, timestamp: now));
+      _messages = <_LocalMessage>[
+        ..._messages.where((m) => !m.isTransientError && !_isOldFixedLengthError(m)),
+        _LocalMessage(text: text, isUser: true, timestamp: now),
+      ];
       _isSending = true;
       _isAiTyping = true;
     });
@@ -185,29 +271,39 @@ class _ChatScreenState extends State<ChatScreen> {
       final result = await _repo.sendMessage(conv.id, text);
       if (!mounted || requestId != _aiRequestId) return;
       setState(() {
-        _messages.add(_LocalMessage(
-          text: result.assistantMessage.content,
-          isUser: false,
-          timestamp: result.assistantMessage.createdAt,
-        ));
-        _currentConversation = conv.copyWith(title: result.title, updatedAt: DateTime.now());
+        _messages = <_LocalMessage>[
+          ..._messages,
+          _LocalMessage(
+            text: result.assistantMessage.content,
+            isUser: false,
+            timestamp: result.assistantMessage.createdAt,
+          ),
+        ];
+        final updatedConversation = conv.copyWith(title: result.title, updatedAt: DateTime.now());
+        _currentConversation = updatedConversation;
         final idx = _conversations.indexWhere((c) => c.id == conv.id);
+        final updatedConversations = List<ChatConversation>.from(_conversations, growable: true);
         if (idx >= 0) {
-          _conversations[idx] = _conversations[idx].copyWith(title: result.title, updatedAt: DateTime.now());
+          updatedConversations[idx] = updatedConversation;
         } else {
-          _conversations.insert(0, _currentConversation!);
+          updatedConversations.insert(0, updatedConversation);
         }
-        _conversations.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+        updatedConversations.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+        _conversations = updatedConversations;
       });
       _scrollToBottom();
     } catch (e) {
       if (!mounted || requestId != _aiRequestId) return;
       setState(() {
-        _messages.add(_LocalMessage(
-          text: 'I encountered an error. ${_humanise(e)}',
-          isUser: false,
-          timestamp: DateTime.now(),
-        ));
+        _messages = <_LocalMessage>[
+          ..._messages,
+          _LocalMessage(
+            text: _assistantFailureMessage(e),
+            isUser: false,
+            timestamp: DateTime.now(),
+            isTransientError: true,
+          ),
+        ];
       });
     } finally {
       if (mounted) {
@@ -236,6 +332,25 @@ class _ChatScreenState extends State<ChatScreen> {
     return e.toString();
   }
 
+  String _assistantFailureMessage(Object e) {
+    final msg = _humanise(e);
+    if (e is NetworkException || msg.toLowerCase().contains('cannot reach backend')) {
+      return "I can't connect to the Travel Buddy backend right now. Please check that the backend is running and try again.";
+    }
+    if (e is AuthException) {
+      return "Your login session needs to be refreshed before I can continue this chat.";
+    }
+    if (e is ServerException || msg.toLowerCase().contains('api_key')) {
+      return "Travel Buddy AI is temporarily unavailable. Please check the backend AI/API key setup and try again.";
+    }
+    return "I couldn't send that message. $msg";
+  }
+
+  bool _isOldFixedLengthError(_LocalMessage message) {
+    return !message.isUser &&
+        message.text.toLowerCase().contains('cannot add to a fixed-length list');
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -246,7 +361,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
     return Scaffold(
       key: _scaffoldKey,
-      backgroundColor: isDark ? const Color(0xFF0E1320) : const Color(0xFFF6F7FB),
+      backgroundColor: isDark ? AppColors.bgDark : AppColors.bgLight,
       drawer: _buildDrawer(theme, isDark, primary),
       appBar: _buildAppBar(theme, isDark, primary),
       body: Column(
@@ -268,7 +383,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Widget _buildDrawer(ThemeData theme, bool isDark, Color primary) {
     return Drawer(
-      backgroundColor: isDark ? const Color(0xFF131A2A) : Colors.white,
+      backgroundColor: isDark ? AppColors.surfaceDark : Colors.white,
       width: MediaQuery.of(context).size.width * 0.82,
       child: SafeArea(
         child: Column(
@@ -279,7 +394,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 children: [
                   CircleAvatar(
                     radius: 18,
-                    backgroundColor: primary.withOpacity(0.15),
+                    backgroundColor: primary.withValues(alpha: 0.15),
                     child: Icon(Icons.travel_explore_rounded, color: primary, size: 22),
                   ),
                   const SizedBox(width: 12),
@@ -331,6 +446,33 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               ),
             ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
+              child: TextField(
+                controller: _conversationSearchController,
+                textInputAction: TextInputAction.search,
+                style: TextStyle(color: isDark ? Colors.white : Colors.black87, fontSize: 13),
+                decoration: InputDecoration(
+                  hintText: 'Search chats',
+                  hintStyle: TextStyle(color: isDark ? Colors.white38 : Colors.black38),
+                  prefixIcon: Icon(Icons.search_rounded, size: 19, color: isDark ? Colors.white54 : Colors.black45),
+                  suffixIcon: _conversationSearchController.text.isEmpty
+                      ? null
+                      : IconButton(
+                          icon: const Icon(Icons.close_rounded, size: 18),
+                          onPressed: _conversationSearchController.clear,
+                          tooltip: 'Clear search',
+                        ),
+                  isDense: true,
+                  filled: true,
+                  fillColor: isDark ? AppColors.surfaceDarkElevated : AppColors.headerLilac,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+            ),
             Expanded(
               child: _isLoadingConversations
                   ? Center(child: CircularProgressIndicator(color: primary))
@@ -338,23 +480,26 @@ class _ChatScreenState extends State<ChatScreen> {
                       ? _buildSidebarError(isDark)
                       : _conversations.isEmpty
                           ? _buildEmptyDrawerHint(isDark)
-                          : ListView.separated(
-                              padding: const EdgeInsets.symmetric(vertical: 4),
-                              itemCount: _conversations.length,
-                              separatorBuilder: (_, __) => const SizedBox(height: 2),
-                              itemBuilder: (ctx, i) {
-                                final c = _conversations[i];
-                                final active = _currentConversation?.id == c.id;
-                                return _ConversationTile(
-                                  conversation: c,
-                                  isActive: active,
-                                  isDark: isDark,
-                                  primary: primary,
-                                  onTap: () => _openConversation(c),
-                                  onDelete: () => _deleteConversation(c),
-                                );
-                              },
-                            ),
+                          : _filteredConversations.isEmpty
+                              ? _buildNoSearchResults(isDark)
+                              : ListView.separated(
+                                  padding: const EdgeInsets.symmetric(vertical: 4),
+                                  itemCount: _filteredConversations.length,
+                                  separatorBuilder: (_, _) => const SizedBox(height: 2),
+                                  itemBuilder: (ctx, i) {
+                                    final c = _filteredConversations[i];
+                                    final active = _currentConversation?.id == c.id;
+                                    return _ConversationTile(
+                                      conversation: c,
+                                      isActive: active,
+                                      isDark: isDark,
+                                      primary: primary,
+                                      onTap: () => _openConversation(c),
+                                      onRename: () => _renameConversation(c),
+                                      onDelete: () => _deleteConversation(c),
+                                    );
+                                  },
+                                ),
             ),
             const Divider(height: 1),
             ListTile(
@@ -415,11 +560,24 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  Widget _buildNoSearchResults(bool isDark) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Text(
+          'No matching chats',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: isDark ? Colors.white60 : Colors.black54, fontSize: 13),
+        ),
+      ),
+    );
+  }
+
   PreferredSizeWidget _buildAppBar(ThemeData theme, bool isDark, Color primary) {
     final title = _currentConversation?.title ?? 'Travel Buddy AI';
     return AppBar(
       elevation: 0,
-      backgroundColor: isDark ? const Color(0xFF131A2A) : Colors.white,
+      backgroundColor: isDark ? AppColors.surfaceDark : Colors.white,
       foregroundColor: isDark ? Colors.white : Colors.black87,
       centerTitle: false,
       leading: IconButton(
@@ -431,7 +589,7 @@ class _ChatScreenState extends State<ChatScreen> {
         children: [
           CircleAvatar(
             radius: 16,
-            backgroundColor: primary.withOpacity(0.15),
+            backgroundColor: primary.withValues(alpha: 0.15),
             child: Icon(Icons.smart_toy_rounded, color: primary, size: 18),
           ),
           const SizedBox(width: 10),
@@ -495,7 +653,7 @@ class _ChatScreenState extends State<ChatScreen> {
           children: [
             CircleAvatar(
               radius: 36,
-              backgroundColor: primary.withOpacity(0.12),
+              backgroundColor: primary.withValues(alpha: 0.12),
               child: Icon(Icons.travel_explore_rounded, size: 38, color: primary),
             ),
             const SizedBox(height: 18),
@@ -541,7 +699,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
-              backgroundColor: isDark ? const Color(0xFF1E293B) : primary.withOpacity(0.08),
+              backgroundColor: isDark ? AppColors.surfaceDarkElevated : primary.withValues(alpha: 0.08),
               onPressed: _isSending ? null : () => _sendMessage(_quickSuggestions[i]),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
               side: BorderSide.none,
@@ -556,10 +714,10 @@ class _ChatScreenState extends State<ChatScreen> {
     return Container(
       padding: EdgeInsets.fromLTRB(14, 10, 14, MediaQuery.of(context).padding.bottom + 12),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF131A2A) : Colors.white,
+        color: isDark ? AppColors.surfaceDark : Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.20 : 0.05),
+            color: Colors.black.withValues(alpha: isDark ? 0.20 : 0.05),
             blurRadius: 10,
             offset: const Offset(0, -2),
           ),
@@ -571,7 +729,7 @@ class _ChatScreenState extends State<ChatScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 18),
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                color: isDark ? AppColors.surfaceDarkElevated : AppColors.headerLilac,
                 borderRadius: BorderRadius.circular(28),
               ),
               child: TextField(
@@ -599,11 +757,11 @@ class _ChatScreenState extends State<ChatScreen> {
               width: 48,
               height: 48,
               decoration: BoxDecoration(
-                color: _isSending ? primary.withOpacity(0.55) : primary,
+                color: _isSending ? primary.withValues(alpha: 0.55) : primary,
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: primary.withOpacity(0.35),
+                    color: primary.withValues(alpha: 0.35),
                     blurRadius: 12,
                     offset: const Offset(0, 4),
                   ),
@@ -634,6 +792,7 @@ class _ConversationTile extends StatelessWidget {
   final bool isDark;
   final Color primary;
   final VoidCallback onTap;
+  final VoidCallback onRename;
   final VoidCallback onDelete;
 
   const _ConversationTile({
@@ -642,6 +801,7 @@ class _ConversationTile extends StatelessWidget {
     required this.isDark,
     required this.primary,
     required this.onTap,
+    required this.onRename,
     required this.onDelete,
   });
 
@@ -658,7 +818,7 @@ class _ConversationTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bg = isActive
-        ? (isDark ? primary.withOpacity(0.20) : primary.withOpacity(0.10))
+        ? (isDark ? primary.withValues(alpha: 0.20) : primary.withValues(alpha: 0.10))
         : Colors.transparent;
     final fg = isActive ? primary : (isDark ? Colors.white : Colors.black87);
 
@@ -701,12 +861,35 @@ class _ConversationTile extends StatelessWidget {
                     ],
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline_rounded, size: 18),
-                  color: isDark ? Colors.white54 : Colors.black54,
-                  onPressed: onDelete,
-                  splashRadius: 18,
-                  tooltip: 'Delete',
+                PopupMenuButton<String>(
+                  tooltip: 'Chat options',
+                  icon: Icon(Icons.more_vert_rounded, size: 18, color: isDark ? Colors.white54 : Colors.black54),
+                  onSelected: (value) {
+                    if (value == 'rename') onRename();
+                    if (value == 'delete') onDelete();
+                  },
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(
+                      value: 'rename',
+                      child: Row(
+                        children: [
+                          Icon(Icons.edit_outlined, size: 18),
+                          SizedBox(width: 10),
+                          Text('Rename'),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: Row(
+                        children: [
+                          Icon(Icons.delete_outline_rounded, size: 18),
+                          SizedBox(width: 10),
+                          Text('Delete'),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -753,7 +936,7 @@ class _ChatBubble extends StatelessWidget {
                             end: Alignment.bottomRight,
                           )
                         : null,
-                    color: isUser ? null : (isDark ? const Color(0xFF1E293B) : Colors.white),
+                    color: isUser ? null : (isDark ? AppColors.surfaceDarkElevated : Colors.white),
                     borderRadius: BorderRadius.only(
                       topLeft: const Radius.circular(20),
                       topRight: const Radius.circular(20),
@@ -762,7 +945,7 @@ class _ChatBubble extends StatelessWidget {
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(isDark ? 0.18 : 0.04),
+                        color: Colors.black.withValues(alpha: isDark ? 0.18 : 0.04),
                         blurRadius: 8,
                         offset: const Offset(0, 3),
                       ),
@@ -812,7 +995,7 @@ class _TypingIndicator extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 14),
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1E293B) : Colors.white,
+          color: isDark ? AppColors.surfaceDarkElevated : Colors.white,
           borderRadius: const BorderRadius.only(
             topLeft: Radius.circular(20),
             topRight: Radius.circular(20),
@@ -821,7 +1004,7 @@ class _TypingIndicator extends StatelessWidget {
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.04),
+              color: Colors.black.withValues(alpha: 0.04),
               blurRadius: 8,
               offset: const Offset(0, 3),
             ),
@@ -873,7 +1056,7 @@ class _AnimatedDotState extends State<_AnimatedDot> with SingleTickerProviderSta
         width: 6,
         height: 6,
         margin: const EdgeInsets.symmetric(horizontal: 2),
-        decoration: BoxDecoration(color: widget.color.withOpacity(0.6), shape: BoxShape.circle),
+        decoration: BoxDecoration(color: widget.color.withValues(alpha: 0.6), shape: BoxShape.circle),
       ),
     );
   }
@@ -886,9 +1069,61 @@ class _LocalMessage {
   final String text;
   final bool isUser;
   final DateTime timestamp;
+  final bool isTransientError;
   const _LocalMessage({
     required this.text,
     required this.isUser,
     required this.timestamp,
+    this.isTransientError = false,
   });
+}
+
+// ===========================================================================
+// Rename dialog — owns its own controller so the lifecycle is correct
+// ===========================================================================
+class _RenameChatDialog extends StatefulWidget {
+  const _RenameChatDialog({required this.initialTitle});
+  final String initialTitle;
+
+  @override
+  State<_RenameChatDialog> createState() => _RenameChatDialogState();
+}
+
+class _RenameChatDialogState extends State<_RenameChatDialog> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.initialTitle);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Rename chat'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        maxLength: 80,
+        textInputAction: TextInputAction.done,
+        decoration: const InputDecoration(
+          labelText: 'Chat title',
+          border: OutlineInputBorder(),
+        ),
+        onSubmitted: (value) => Navigator.pop(context, value.trim()),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _controller.text.trim()),
+          child: const Text('Save'),
+        ),
+      ],
+    );
+  }
 }

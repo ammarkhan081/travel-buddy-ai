@@ -51,7 +51,7 @@ def upgrade() -> None:
             sa.Column("content", sa.String(), nullable=False),
             sa.Column("location", sa.String(), nullable=True),
             sa.Column("timestamp", sa.String(), nullable=False),
-            sa.Column("is_auto_generated", sa.Boolean(), nullable=False, server_default=sa.text("0")),
+            sa.Column("is_auto_generated", sa.Boolean(), nullable=False, server_default=sa.false()),
         )
 
     if not _has_table("expenses"):
@@ -134,4 +134,3 @@ def downgrade() -> None:
         op.drop_table("diary_entries")
     if _has_table("alert_cache"):
         op.drop_table("alert_cache")
-

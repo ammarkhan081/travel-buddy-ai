@@ -93,12 +93,14 @@ ai/models/*.pt
 ai/models/*.h5
 
 # Docker
-.dockerignore
+# Keep .dockerignore tracked so cloud Docker builds exclude secrets.
 
 # Build artifacts and local logs
 signing_report.txt
 *.tmp
 *.temp
+node_modules/
+.fuse_hidden*
 
 # Evaluation outputs
 backend/evaluation/results/*.json

@@ -1,9 +1,11 @@
-﻿import 'dart:io';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import '../../services/auth_service.dart';
+import '../../theme/app_colors.dart';
+import '../../widgets/app_header.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -52,7 +54,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             if (_profileImage != null || _profileImageUrl != null)
               ListTile(
                 leading: const Icon(Icons.delete, color: Colors.red),
-                title: const Text('Remove Photo', style: TextStyle(color: Colors.red)),
+                title: const Text(
+                  'Remove Photo',
+                  style: TextStyle(color: Colors.red),
+                ),
                 onTap: () {
                   setState(() {
                     _profileImage = null;
@@ -80,15 +85,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         });
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Profile picture ${source == ImageSource.camera ? 'taken' : 'selected'}')),
+          SnackBar(
+            content: Text(
+              'Profile picture ${source == ImageSource.camera ? 'taken' : 'selected'}',
+            ),
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     }
   }
@@ -98,7 +107,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (user != null) {
       _nameController = TextEditingController(text: user.displayName ?? '');
       _emailController = TextEditingController(text: user.email ?? '');
-      
+
       // Load profile picture from Firestore - use doc() instead of query for better performance
       try {
         final userDocRef = _firestore.collection('users').doc(user.uid);
@@ -151,7 +160,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       SizedBox(
                         width: 20,
                         height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
                       ),
                       SizedBox(width: 16),
                       Text('Uploading profile picture...'),
@@ -162,8 +174,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               );
             }
 
-            final ref = _storage.ref().child('profile_pictures/${user.uid}.jpg');
-            
+            final ref = _storage.ref().child(
+              'profile_pictures/${user.uid}.jpg',
+            );
+
             // Upload with metadata
             final uploadTask = ref.putFile(
               _profileImage!,
@@ -208,7 +222,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         // Save to Firestore using doc() instead of query
         final userDocRef = _firestore.collection('users').doc(user.uid);
         final userDoc = await userDocRef.get();
-        
+
         if (userDoc.exists) {
           await userDocRef.update({
             'name': _nameController.text.trim(),
@@ -230,7 +244,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             'updatedAt': FieldValue.serverTimestamp(),
           });
         }
-        
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -274,220 +288,233 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Edit Profile'),
-        elevation: 0,
-        actions: [
-          if (_isLoading)
-            const Padding(
-              padding: EdgeInsets.all(16.0),
-              child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            )
-          else
-            IconButton(
-              icon: const Icon(Icons.check),
-              onPressed: _saveProfile,
+      backgroundColor: theme.scaffoldBackgroundColor,
+      body: Column(
+        children: [
+          AppHeader(
+            title: 'Edit Profile',
+            subtitle: 'Keep your travel profile current',
+            onBack: () => Navigator.maybePop(context),
+            trailing: AppHeaderIconButton(
+              icon: Icons.check_rounded,
+              onTap: _isLoading ? () {} : _saveProfile,
             ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            children: [
-              const SizedBox(height: 24),
-              Stack(
-                children: [
-                  Container(
-                    width: 120,
-                    height: 120,
-                    decoration: BoxDecoration(
-                      gradient: _profileImage == null && _profileImageUrl == null
-                          ? LinearGradient(
-                              colors: [
-                                Theme.of(context).colorScheme.primary,
-                                Theme.of(context).colorScheme.secondary,
-                              ],
-                            )
-                          : null,
-                      color: _profileImage != null || _profileImageUrl != null ? null : Colors.transparent,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.1),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: _profileImage != null
-                        ? ClipOval(
-                            child: Image.file(
-                              _profileImage!,
-                              width: 120,
-                              height: 120,
-                              fit: BoxFit.cover,
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16.0),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  children: [
+                    const SizedBox(height: 8),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.fromLTRB(16, 22, 16, 18),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surface,
+                        borderRadius: BorderRadius.circular(AppRadii.lg),
+                        boxShadow: isDark ? const [] : AppShadows.softCard,
+                      ),
+                      child: Column(
+                        children: [
+                          _buildAvatar(context, isDark),
+                          const SizedBox(height: 18),
+                          Text(
+                            'Tap the camera badge to update your photo',
+                            style: TextStyle(
+                              color: theme.colorScheme.onSurfaceVariant,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
                             ),
-                          )
-                        : _profileImageUrl != null
-                            ? ClipOval(
-                                child: Image.network(
-                                  _profileImageUrl!,
-                                  width: 120,
-                                  height: 120,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) {
-                                    return Center(
-                                      child: Text(
-                                        _nameController.text.isNotEmpty
-                                            ? _nameController.text
-                                                .split(' ')
-                                                .map((n) => n.isNotEmpty ? n[0] : '')
-                                                .take(2)
-                                                .join()
-                                                .toUpperCase()
-                                            : 'U',
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 40,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              )
-                            : Center(
-                                child: Text(
-                                  _nameController.text.isNotEmpty
-                                      ? _nameController.text
-                                          .split(' ')
-                                          .map((n) => n.isNotEmpty ? n[0] : '')
-                                          .take(2)
-                                          .join()
-                                          .toUpperCase()
-                                      : 'U',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 40,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                  ),
-                  Positioned(
-                    bottom: 0,
-                    right: 0,
-                    child: GestureDetector(
-                      onTap: _changeProfilePicture,
-                      child: Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.2),
-                              blurRadius: 4,
-                            ),
-                          ],
-                        ),
-                        child: Icon(
-                          Icons.camera_alt,
-                          color: Theme.of(context).colorScheme.primary,
-                          size: 20,
-                        ),
+                          ),
+                        ],
                       ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 32),
-              TextFormField(
-                controller: _nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Full Name',
-                  prefixIcon: Icon(Icons.person),
-                  border: OutlineInputBorder(),
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surface,
+                        borderRadius: BorderRadius.circular(AppRadii.lg),
+                        boxShadow: isDark ? const [] : AppShadows.softCard,
+                      ),
+                      child: Column(
+                        children: [
+                          TextFormField(
+                            controller: _nameController,
+                            decoration: const InputDecoration(
+                              labelText: 'Full Name',
+                              prefixIcon: Icon(Icons.person),
+                            ),
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Please enter your name';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _emailController,
+                            keyboardType: TextInputType.emailAddress,
+                            decoration: const InputDecoration(
+                              labelText: 'Email',
+                              prefixIcon: Icon(Icons.email),
+                            ),
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Please enter your email';
+                              }
+                              if (!value.contains('@')) {
+                                return 'Please enter a valid email';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _phoneController,
+                            keyboardType: TextInputType.phone,
+                            decoration: const InputDecoration(
+                              labelText: 'Phone Number',
+                              prefixIcon: Icon(Icons.phone),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _bioController,
+                            decoration: const InputDecoration(
+                              labelText: 'Bio',
+                              prefixIcon: Icon(Icons.description),
+                            ),
+                            maxLines: 3,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 52,
+                      child: ElevatedButton(
+                        onPressed: _isLoading ? null : _saveProfile,
+                        child: _isLoading
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white,
+                                  ),
+                                ),
+                              )
+                            : const Text('Save Changes'),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                 ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your name';
-                  }
-                  return null;
-                },
               ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _emailController,
-                keyboardType: TextInputType.emailAddress,
-                decoration: const InputDecoration(
-                  labelText: 'Email',
-                  prefixIcon: Icon(Icons.email),
-                  border: OutlineInputBorder(),
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your email';
-                  }
-                  if (!value.contains('@')) {
-                    return 'Please enter a valid email';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _phoneController,
-                keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(
-                  labelText: 'Phone Number',
-                  prefixIcon: Icon(Icons.phone),
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _bioController,
-                decoration: const InputDecoration(
-                  labelText: 'Bio',
-                  prefixIcon: Icon(Icons.description),
-                  border: OutlineInputBorder(),
-                ),
-                maxLines: 3,
-              ),
-              const SizedBox(height: 32),
-              ElevatedButton(
-                onPressed: _isLoading ? null : _saveProfile,
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 32,
-                    vertical: 16,
-                  ),
-                  minimumSize: const Size(double.infinity, 50),
-                ),
-                child: _isLoading
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                        ),
-                      )
-                    : const Text('Save Changes'),
-              ),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
-}
 
+  Widget _buildAvatar(BuildContext context, bool isDark) {
+    final theme = Theme.of(context);
+    final initials = _nameController.text.isNotEmpty
+        ? _nameController.text
+              .split(' ')
+              .map((n) => n.isNotEmpty ? n[0] : '')
+              .take(2)
+              .join()
+              .toUpperCase()
+        : 'U';
+
+    return Stack(
+      children: [
+        Container(
+          width: 120,
+          height: 120,
+          decoration: BoxDecoration(
+            gradient: _profileImage == null && _profileImageUrl == null
+                ? AppGradients.primary
+                : null,
+            color: _profileImage != null || _profileImageUrl != null
+                ? null
+                : Colors.transparent,
+            shape: BoxShape.circle,
+            boxShadow: isDark ? const [] : AppShadows.raisedCard,
+          ),
+          child: _profileImage != null
+              ? ClipOval(
+                  child: Image.file(
+                    _profileImage!,
+                    width: 120,
+                    height: 120,
+                    fit: BoxFit.cover,
+                  ),
+                )
+              : _profileImageUrl != null
+              ? ClipOval(
+                  child: Image.network(
+                    _profileImageUrl!,
+                    width: 120,
+                    height: 120,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Center(
+                        child: Text(
+                          initials,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 40,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                )
+              : Center(
+                  child: Text(
+                    initials,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 40,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+        ),
+        Positioned(
+          bottom: 0,
+          right: 0,
+          child: GestureDetector(
+            onTap: _changeProfilePicture,
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface,
+                shape: BoxShape.circle,
+                boxShadow: isDark ? const [] : AppShadows.softCard,
+              ),
+              child: const Icon(
+                Icons.camera_alt,
+                color: AppColors.primary,
+                size: 20,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}

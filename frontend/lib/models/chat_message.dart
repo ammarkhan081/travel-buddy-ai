@@ -17,7 +17,7 @@ class ChatMessage {
   bool get isUser => role == 'user';
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
-    DateTime _parse(dynamic raw) {
+    DateTime parse(dynamic raw) {
       if (raw is String && raw.isNotEmpty) {
         try {
           return DateTime.parse(raw);
@@ -31,7 +31,7 @@ class ChatMessage {
       conversationId: (json['conversation_id'] as num).toInt(),
       role: json['role'] as String? ?? 'assistant',
       content: json['content'] as String? ?? '',
-      createdAt: _parse(json['created_at']),
+      createdAt: parse(json['created_at']),
     );
   }
 }

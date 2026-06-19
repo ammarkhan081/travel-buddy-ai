@@ -3,11 +3,13 @@
 Production-ready chat:
 - Conversation persistence (chat_conversations + chat_messages tables)
 - Hybrid auto-routing (personal-records vs general travel knowledge)
-- Embedding-backed RAG over the user's expenses / reminders / diary / voice notes
+- Embedding-backed RAG over the user's expenses / reminders / diary /
+  voice notes (from SQLite) + journey history (from Firestore)
 - Auto-generated conversation titles (ChatGPT-style sidebar names)
 - v6 continuity: USER_NAME, LAST_LOCATION, PKR-default currency
 """
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -85,6 +87,11 @@ _PERSONAL_CUES = [
     "show my", "list my", "my expenses", "my reminders", "my diary",
     "my notes", "my voice notes", "my trip", "what i spent",
     "remind me when", "what reminders",
+    # Journey-history cues (matches journeys saved in Firestore via
+    # Start Journey screen).
+    "my journey", "my journeys", "my trips", "trip history",
+    "journey history", "where have i been", "places i visited",
+    "my travel history", "past journeys", "past trips",
 ]
 
 _GENERAL_TRAVEL_CUES = [
@@ -159,27 +166,133 @@ def _chunk_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _stable_int_id(text: str) -> int:
+    """Map an arbitrary string (e.g., a Firestore document id) to a stable
+    32-bit-positive integer for use as RagEmbedding.source_id. Uses MD5 so the
+    value is reproducible across server restarts (unlike Python's randomised
+    built-in hash())."""
+    if not text:
+        return 0
+    digest = hashlib.md5(text.encode("utf-8")).hexdigest()[:8]
+    return int(digest, 16) % (2 ** 31)
+
+
+def _fetch_user_journeys(user_id: str) -> List[Dict]:
+    """Fetch the user's journey history from Firestore (`users/{uid}/journeys`).
+
+    Best-effort: returns an empty list on ANY failure (firebase-admin missing,
+    Firebase not initialised, network/permission issue, malformed data) so the
+    existing chat path keeps working uninterrupted.
+    """
+    if not user_id:
+        return []
+    try:
+        # Lazy import so a missing optional dependency cannot crash the module.
+        from firebase_admin import firestore as _admin_firestore
+
+        client = _admin_firestore.client()
+        col = (
+            client.collection("users")
+            .document(user_id)
+            .collection("journeys")
+        )
+
+        def _to_iso(ts):
+            if ts is None:
+                return None
+            try:
+                return ts.isoformat()
+            except Exception:
+                return str(ts)
+
+        out: List[Dict] = []
+        for d in col.stream():
+            data = d.to_dict() or {}
+            out.append({
+                "id": d.id,
+                "fromPlace": str(data.get("fromPlace") or ""),
+                "toPlace": str(data.get("toPlace") or ""),
+                "departure": _to_iso(data.get("departureTime")),
+                "arrival": _to_iso(data.get("arrivalTime")),
+                "transport": str(data.get("transport") or ""),
+                "isCompleted": bool(data.get("isCompleted") or False),
+                "notes": str(data.get("notes") or ""),
+            })
+        return out
+    except Exception as e:
+        logger.warning(
+            "fetch_user_journeys_failed",
+            extra={"event": "fetch_user_journeys_failed", "error": str(e)},
+        )
+        return []
+
+
 def _build_docs(db: Session, user_id: str) -> List[Tuple[str, int, int, str]]:
     docs: List[Tuple[str, int, int, str]] = []
+    try:
+        from .trip_chat import trip_destination_map
+        _tripmap = trip_destination_map(db, user_id)
+    except Exception:
+        _tripmap = {}
+
+    def _trip_tag(obj) -> str:
+        dest = _tripmap.get(getattr(obj, "trip_id", None) or -1, "")
+        return f", trip={dest}" if dest else ""
+
     for e in db.query(Expense).filter(Expense.user_id == user_id).all():
-        doc = f"Expense on {e.date}: amount={e.amount}, category={e.category}, description={e.description or ''}"
+        _m = f", merchant={e.merchant}" if getattr(e, "merchant", None) else ""
+        _l = f", location={e.location}" if getattr(e, "location", None) else ""
+        doc = f"Expense on {e.date}: amount={e.amount}, category={e.category}{_m}{_l}{_trip_tag(e)}, description={e.description or ''}"
         for i, chunk in enumerate(_chunk_text(doc)):
             docs.append(("expense", int(e.id), i, chunk))
     for r in db.query(Reminder).filter(Reminder.user_id == user_id).all():
-        doc = f"Reminder at {r.datetime}: title={r.title}, status={r.status}, location={r.location or ''}, transcript={r.transcript or ''}"
+        doc = f"Reminder at {r.datetime}: title={r.title}, status={r.status}, location={r.location or ''}{_trip_tag(r)}, transcript={r.transcript or ''}"
         for i, chunk in enumerate(_chunk_text(doc)):
             docs.append(("reminder", int(r.id), i, chunk))
     for d in db.query(DiaryEntry).filter(DiaryEntry.user_id == user_id).all():
-        doc = f"Diary {d.timestamp}: title={d.title}. content={d.content}. location={d.location or ''}"
+        doc = f"Diary {d.timestamp}: title={d.title}. content={d.content}. location={d.location or ''}{_trip_tag(d)}"
         for i, chunk in enumerate(_chunk_text(doc)):
             docs.append(("diary", int(d.id), i, chunk))
     for v in db.query(VoiceNote).filter(VoiceNote.user_id == user_id).all():
         transcript = (v.transcript or "").strip()
         if not transcript:
             continue
-        doc = f"Voice note {v.timestamp or v.created_at or ''}: transcript={transcript}"
+        doc = f"Voice note {v.timestamp or v.created_at or ''}{_trip_tag(v)}: transcript={transcript}"
         for i, chunk in enumerate(_chunk_text(doc)):
             docs.append(("voice_note", int(v.id), i, chunk))
+
+    # Journey history lives in Firestore (saved by the Flutter Start Journey
+    # screen). Pull it in best-effort so RAG can answer questions like
+    # "show my journeys" / "where have I been". Wrapped to never break the
+    # existing RAG flow.
+    try:
+        for j in _fetch_user_journeys(user_id):
+            departure = j.get("departure") or "unknown date"
+            from_place = j.get("fromPlace") or "unknown"
+            to_place = j.get("toPlace") or "unknown"
+            transport = j.get("transport") or "unknown"
+            status = "completed" if j.get("isCompleted") else "in progress"
+            notes = j.get("notes") or ""
+            arrival = j.get("arrival")
+            doc = (
+                f"Journey {departure}: from {from_place} to {to_place} "
+                f"by {transport}, status: {status}."
+            )
+            if arrival:
+                doc += f" Arrived {arrival}."
+            if notes:
+                doc += f" Notes: {notes}"
+            sid = _stable_int_id(str(j.get("id") or ""))
+            if sid == 0:
+                continue  # Skip malformed entries with no usable id
+            for i, chunk in enumerate(_chunk_text(doc)):
+                docs.append(("journey", sid, i, chunk))
+    except Exception as e:
+        logger.warning(
+            "build_docs_journey_section_failed",
+            extra={"event": "build_docs_journey_section_failed", "error": str(e)},
+        )
+
     return docs
 
 
@@ -310,7 +423,8 @@ def _build_system_prompt(query_type, user_name, last_location, retrieved_context
         grounding = (
             "GROUNDING RULE: This question is about the user's own records.\n"
             "Use ONLY the [RETRIEVED USER RECORDS] block below for facts about their expenses, reminders, "
-            "diary entries, or voice notes. If that block says NO_CONTEXT, clearly say you do not have that record yet.\n"
+            "diary entries, voice notes, or travel journeys (from -> to trips). If that block says NO_CONTEXT, "
+            "clearly say you do not have that record yet.\n"
             "Do not invent amounts, dates, places, or any other personal detail."
         )
     elif query_type == "general":
@@ -395,6 +509,20 @@ def create_conversation(db: Session, user_id: str, title: str = "New Chat") -> C
     return conv
 
 
+def rename_conversation(db: Session, conv_id: int, user_id: str, title: str) -> Optional[ChatConversation]:
+    conv = get_conversation(db, conv_id, user_id)
+    if not conv:
+        return None
+    clean = re.sub(r"\s+", " ", (title or "").strip())
+    if not clean:
+        raise ChatError("Conversation title cannot be empty.")
+    conv.title = clean[:80]
+    conv.updated_at = now_utc_iso()
+    db.commit()
+    db.refresh(conv)
+    return conv
+
+
 def get_conversation(db: Session, conv_id: int, user_id: str) -> Optional[ChatConversation]:
     return (
         db.query(ChatConversation)
@@ -443,20 +571,58 @@ async def handle_user_turn(db, conversation, user_message, user_id, user_name=No
 
     query_type = _classify_query(text)
 
+    # Per-trip grounding: if the user names one of their trips, pull exact
+    # tagged records and force personal retrieval so totals are accurate.
+    trip_facts = None
+    agg_facts = None
+    try:
+        from .trip_chat import detect_trips_in_query, build_trip_facts
+        from .aggregate_facts import build_aggregate_facts
+        # Only ground in a named trip when the question is personal in nature.
+        # Pure planning questions ("suggest a 3-day Lahore trip") stay generic
+        # even if the user has visited that place.
+        if query_type in {"personal", "mixed"}:
+            _matched_trips = detect_trips_in_query(db, user_id, text)
+            if _matched_trips:
+                trip_facts = build_trip_facts(db, user_id, _matched_trips, text)
+            else:
+                # No specific trip named → answer aggregation/count questions
+                # ("how much did I spend in total?", "how much on food?") from
+                # exact SQL aggregates rather than fuzzy retrieval.
+                agg_facts = build_aggregate_facts(db, user_id, text)
+    except Exception as e:
+        logger.warning("trip_facts_build_failed", extra={"error": str(e)})
+
     context = "RETRIEVED USER RECORDS:\nNO_CONTEXT"
     if settings.OPENAI_API_KEY and query_type in {"personal", "mixed"}:
         client = make_openai_client()
         try:
-            _sync_embedding_cache(db, client, user_id)
+            # Offload the synchronous embedding sync (DB + OpenAI network I/O)
+            # to a worker thread so the event loop is not blocked.
+            await asyncio.to_thread(_sync_embedding_cache, db, client, user_id)
         except Exception as e:
             logger.warning("chat_embedding_sync_before_retrieval_failed", extra={"error": str(e)})
         try:
             threshold = None if query_type == "personal" else max(0.15, settings.RAG_SIMILARITY_THRESHOLD - 0.1)
-            retrieved = _retrieve_relevant_context(text, db, user_id, client=client, top_k=6, threshold=threshold)
+            retrieved = await asyncio.to_thread(
+                _retrieve_relevant_context, text, db, user_id, client, 6, threshold
+            )
             if retrieved and retrieved != "NO_CONTEXT":
                 context = retrieved
         except RetrievalError as e:
             logger.warning("chat_retrieval_fallback_no_context", extra={"error": str(e)})
+
+    if trip_facts:
+        if context and context != "RETRIEVED USER RECORDS:\nNO_CONTEXT":
+            context = trip_facts + "\n\n" + context
+        else:
+            context = trip_facts
+
+    if agg_facts:
+        if context and context != "RETRIEVED USER RECORDS:\nNO_CONTEXT":
+            context = agg_facts + "\n\n" + context
+        else:
+            context = agg_facts
 
     if not settings.OPENAI_API_KEY:
         reply_text = (
@@ -471,7 +637,8 @@ async def handle_user_turn(db, conversation, user_message, user_id, user_name=No
         history = _load_history_messages(db, conversation.id, user_id)
         llm_messages = [{"role": "system", "content": system_prompt}] + _cap_messages(history)
         try:
-            content, _ = call_chat_with_fallback(
+            content, _ = await asyncio.to_thread(
+                call_chat_with_fallback,
                 client=make_openai_client(), messages=llm_messages, temperature=0.4,
                 response_format=None, primary_model=settings.OPENAI_MODEL, label="chat_turn",
             )
@@ -502,7 +669,9 @@ async def handle_user_turn(db, conversation, user_message, user_id, user_name=No
     )
     if user_msg_count <= 1 and (not conversation.title or conversation.title.lower() in {"new chat", ""}):
         if settings.OPENAI_API_KEY:
-            conversation.title = _generate_title(make_openai_client(), text)
+            conversation.title = await asyncio.to_thread(
+                _generate_title, make_openai_client(), text
+            )
         else:
             conversation.title = _heuristic_title(text)
 
@@ -531,25 +700,51 @@ async def generate_chat_response(messages: List[Dict[str, str]], user_id: str, d
         return _fallback_reply(last_user_message, "")
     query_type = _classify_query(last_user_message)
     client = make_openai_client()
+    trip_facts = None
+    agg_facts = None
+    try:
+        from .trip_chat import detect_trips_in_query, build_trip_facts
+        from .aggregate_facts import build_aggregate_facts
+        if query_type in {"personal", "mixed"}:
+            _matched_trips = detect_trips_in_query(db, user_id, last_user_message)
+            if _matched_trips:
+                trip_facts = build_trip_facts(db, user_id, _matched_trips, last_user_message)
+            else:
+                agg_facts = build_aggregate_facts(db, user_id, last_user_message)
+    except Exception as e:
+        logger.warning("trip_facts_build_failed", extra={"error": str(e)})
     context = "RETRIEVED USER RECORDS:\nNO_CONTEXT"
     if query_type in {"personal", "mixed"}:
         try:
-            _sync_embedding_cache(db, client, user_id)
+            await asyncio.to_thread(_sync_embedding_cache, db, client, user_id)
         except Exception as e:
             logger.warning("chat_embedding_sync_before_retrieval_failed", extra={"error": str(e)})
         try:
             threshold = None if query_type == "personal" else max(0.15, settings.RAG_SIMILARITY_THRESHOLD - 0.1)
-            retrieved = _retrieve_relevant_context(last_user_message, db, user_id, client=client, top_k=6, threshold=threshold)
+            retrieved = await asyncio.to_thread(
+                _retrieve_relevant_context, last_user_message, db, user_id, client, 6, threshold
+            )
             if retrieved and retrieved != "NO_CONTEXT":
                 context = retrieved
         except RetrievalError as e:
             logger.warning("chat_retrieval_fallback_no_context", extra={"error": str(e)})
+    if trip_facts:
+        if context and context != "RETRIEVED USER RECORDS:\nNO_CONTEXT":
+            context = trip_facts + "\n\n" + context
+        else:
+            context = trip_facts
+    if agg_facts:
+        if context and context != "RETRIEVED USER RECORDS:\nNO_CONTEXT":
+            context = agg_facts + "\n\n" + context
+        else:
+            context = agg_facts
     system_prompt = _build_system_prompt(
         query_type=query_type, user_name=None, last_location=None, retrieved_context=context,
     )
     llm_messages = [{"role": "system", "content": system_prompt}] + _cap_messages(messages)
     try:
-        content, _ = call_chat_with_fallback(
+        content, _ = await asyncio.to_thread(
+            call_chat_with_fallback,
             client=client, messages=llm_messages, temperature=0.4,
             response_format=None, primary_model=settings.OPENAI_MODEL, label="chat_reply_legacy",
         )

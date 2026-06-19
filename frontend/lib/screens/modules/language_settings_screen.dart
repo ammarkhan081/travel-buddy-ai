@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../theme/app_colors.dart';
+import '../../widgets/app_header.dart';
+
 class LanguageSettingsScreen extends StatefulWidget {
   const LanguageSettingsScreen({super.key});
 
@@ -12,9 +15,17 @@ class _LanguageSettingsScreenState extends State<LanguageSettingsScreen> {
   static const _prefKey = 'app.language';
   String _selected = 'English';
 
-  static const _languages = [
-    {'name': 'English', 'note': 'Fully supported'},
-    {'name': 'Urdu', 'note': 'Coming soon'},
+  static const _languages = <_LangOption>[
+    _LangOption(
+        code: 'English',
+        flag: '🇬🇧',
+        note: 'Fully supported',
+        ready: true),
+    _LangOption(
+        code: 'Urdu',
+        flag: '🇵🇰',
+        note: 'Coming soon',
+        ready: false),
   ];
 
   @override
@@ -46,35 +57,124 @@ class _LanguageSettingsScreenState extends State<LanguageSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Language'),
-        backgroundColor: theme.colorScheme.primary,
-        foregroundColor: theme.colorScheme.onPrimary,
-      ),
+      backgroundColor: theme.scaffoldBackgroundColor,
       body: Column(
         children: [
-          for (final lang in _languages) ...[
-            RadioListTile<String>(
-              title: Text(lang['name']!),
-              subtitle: Text(
-                lang['note']!,
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-              ),
-              value: lang['name']!,
-              groupValue: _selected,
-              activeColor: theme.colorScheme.primary,
-              onChanged: (v) {
-                if (v != null) _select(v);
-              },
-              secondary: _selected == lang['name']
-                  ? Icon(Icons.check_circle, color: theme.colorScheme.primary)
-                  : null,
+          AppHeader(
+            title: 'Language',
+            subtitle: 'Choose your app language',
+            onBack: () => Navigator.maybePop(context),
+          ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+              children: [
+                for (final lang in _languages) ...[
+                  _langOptionCard(lang, isDark, theme),
+                  const SizedBox(height: 10),
+                ],
+              ],
             ),
-            const Divider(height: 1),
-          ],
+          ),
         ],
       ),
     );
   }
+
+  Widget _langOptionCard(_LangOption lang, bool isDark, ThemeData theme) {
+    final active = _selected == lang.code;
+    return Material(
+      color: theme.colorScheme.surface,
+      borderRadius: BorderRadius.circular(AppRadii.lg),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadii.lg),
+        onTap: () => _select(lang.code),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppRadii.lg),
+            border: Border.all(
+              color: active
+                  ? AppColors.primary
+                  : (isDark
+                      ? AppColors.borderDark
+                      : AppColors.borderLight),
+              width: active ? 1.8 : 1,
+            ),
+            boxShadow: isDark ? const [] : AppShadows.softCard,
+            color: theme.colorScheme.surface,
+          ),
+          child: Row(
+            children: [
+              Text(lang.flag, style: const TextStyle(fontSize: 28)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      lang.code,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15,
+                        color: isDark
+                            ? AppColors.textPrimaryDark
+                            : AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      lang.note,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: lang.ready
+                            ? AppColors.success
+                            : AppColors.warning,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                width: 22,
+                height: 22,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: active ? AppColors.primary : Colors.transparent,
+                  border: Border.all(
+                    color: active
+                        ? AppColors.primary
+                        : (isDark
+                            ? AppColors.borderDark
+                            : AppColors.borderLight),
+                    width: 2,
+                  ),
+                ),
+                child: active
+                    ? const Icon(Icons.check,
+                        color: Colors.white, size: 14)
+                    : null,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LangOption {
+  final String code;
+  final String flag;
+  final String note;
+  final bool ready;
+  const _LangOption({
+    required this.code,
+    required this.flag,
+    required this.note,
+    required this.ready,
+  });
 }

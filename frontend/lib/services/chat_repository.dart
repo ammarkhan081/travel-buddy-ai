@@ -18,7 +18,7 @@ class ChatRepository {
     if (raw is! List) return <ChatConversation>[];
     return raw
         .map((j) => ChatConversation.fromJson(Map<String, dynamic>.from(j as Map)))
-        .toList(growable: false);
+        .toList(growable: true);
   }
 
   /// Create a new empty conversation. Title auto-fills on the first message.
@@ -33,15 +33,21 @@ class ChatRepository {
     if (raw is! List) return <ChatMessage>[];
     return raw
         .map((j) => ChatMessage.fromJson(Map<String, dynamic>.from(j as Map)))
-        .toList(growable: false);
+        .toList(growable: true);
   }
 
   /// Send a user message; backend persists both turns and returns them plus
   /// the updated conversation title (auto-generated on the first turn).
+  ///
+  /// Uses a 60-second timeout because the backend chat turn does:
+  /// (1) Firestore read for journey RAG, (2) OpenAI embeddings for any
+  /// new/changed personal records, (3) OpenAI chat completion. On a cold
+  /// start that combined work can exceed the default 15s POST timeout.
   Future<ChatTurnResult> sendMessage(int conversationId, String message) async {
     final raw = await _api.post(
       '/api/chat/conversations/$conversationId/reply',
       {'message': message},
+      timeout: const Duration(seconds: 60),
     );
     final map = Map<String, dynamic>.from(raw as Map);
     return ChatTurnResult(
@@ -55,6 +61,14 @@ class ChatRepository {
 
   Future<void> deleteConversation(int conversationId) async {
     await _api.delete('/api/chat/conversations/$conversationId');
+  }
+
+  Future<ChatConversation> renameConversation(int conversationId, String title) async {
+    final raw = await _api.patch(
+      '/api/chat/conversations/$conversationId',
+      {'title': title},
+    );
+    return ChatConversation.fromJson(Map<String, dynamic>.from(raw as Map));
   }
 }
 

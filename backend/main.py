@@ -19,25 +19,25 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 import requests
 try:
     from .auth import get_current_user
     from .config import settings
     from .database import Base, engine
-    from .models import reminder, expense, voice_note, diary_entry, alert_cache, rag_embedding, decision_review, chat_conversation, chat_message
+    from .models import reminder, expense, voice_note, diary_entry, alert_cache, rag_embedding, decision_review, chat_conversation, chat_message, booking, trip
 except ImportError:
     from auth import get_current_user
     from config import settings
     from database import Base, engine
-    from models import reminder, expense, voice_note, diary_entry, alert_cache, rag_embedding, decision_review, chat_conversation, chat_message
+    from models import reminder, expense, voice_note, diary_entry, alert_cache, rag_embedding, decision_review, chat_conversation, chat_message, booking, trip
 
 try:
     # Preferred package-safe imports when running via `uvicorn backend.main:app`
-    from .routes import reminders, voice_notes, diary, expenses, alerts, intent, chat
+    from .routes import reminders, voice_notes, diary, expenses, alerts, intent, chat, bookings, trips
 except ImportError:
     # Backward-compatible fallback for direct execution contexts
-    from routes import reminders, voice_notes, diary, expenses, alerts, intent, chat
+    from routes import reminders, voice_notes, diary, expenses, alerts, intent, chat, bookings, trips
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -46,34 +46,96 @@ _AUTH_BYPASS_ALLOWED_ENVS = {"development", "dev", "test", "testing", "local"}
 
 
 def _ensure_user_indexes() -> None:
-    """H-3: Backfill critical user_id schema/indexes for existing DBs."""
+    """Backfill local SQLite schema drift and ensure safe indexes if tables exist."""
     with engine.begin() as conn:
-        # Legacy DBs may have alert_cache without user_id column.
-        alert_cache_exists = conn.execute(
-            text("SELECT name FROM sqlite_master WHERE type='table' AND name='alert_cache'")
-        ).fetchone()
-        if alert_cache_exists:
-            cols = conn.execute(text("PRAGMA table_info(alert_cache)")).fetchall()
-            col_names = {c[1] for c in cols}
-            if "user_id" not in col_names:
-                conn.execute(text("ALTER TABLE alert_cache ADD COLUMN user_id TEXT"))
+        if conn.dialect.name == "sqlite":
+            _repair_legacy_sqlite_schema(conn)
 
-    statements = [
-        "CREATE INDEX IF NOT EXISTS ix_reminders_user_id ON reminders (user_id)",
-        "CREATE INDEX IF NOT EXISTS ix_expenses_user_id ON expenses (user_id)",
-        "CREATE INDEX IF NOT EXISTS ix_diary_entries_user_id ON diary_entries (user_id)",
-        "CREATE INDEX IF NOT EXISTS ix_voice_notes_user_id ON voice_notes (user_id)",
-        "CREATE INDEX IF NOT EXISTS ix_alert_cache_user_id ON alert_cache (user_id)",
-        "CREATE INDEX IF NOT EXISTS ix_rag_embeddings_user_id ON rag_embeddings (user_id)",
-        "CREATE INDEX IF NOT EXISTS ix_decision_reviews_user_id ON decision_reviews (user_id)",
-        "CREATE INDEX IF NOT EXISTS ix_chat_conversations_user_id ON chat_conversations (user_id)",
-        "CREATE INDEX IF NOT EXISTS ix_chat_conversations_updated_at ON chat_conversations (updated_at)",
-        "CREATE INDEX IF NOT EXISTS ix_chat_messages_conversation_id ON chat_messages (conversation_id)",
-        "CREATE INDEX IF NOT EXISTS ix_chat_messages_user_id ON chat_messages (user_id)",
-    ]
-    with engine.begin() as conn:
-        for stmt in statements:
-            conn.execute(text(stmt))
+        index_specs = [
+            ("ix_trips_user_id", "trips", ["user_id"]),
+            ("ix_trips_status", "trips", ["status"]),
+            ("ix_trips_start_date", "trips", ["start_date"]),
+            ("ix_expenses_trip_id", "expenses", ["trip_id"]),
+            ("ix_reminders_trip_id", "reminders", ["trip_id"]),
+            ("ix_voice_notes_trip_id", "voice_notes", ["trip_id"]),
+            ("ix_diary_entries_trip_id", "diary_entries", ["trip_id"]),
+            ("ix_bookings_trip_id", "bookings", ["trip_id"]),
+            ("ix_reminders_user_id", "reminders", ["user_id"]),
+            ("ix_expenses_user_id", "expenses", ["user_id"]),
+            ("ix_diary_entries_user_id", "diary_entries", ["user_id"]),
+            ("ix_voice_notes_user_id", "voice_notes", ["user_id"]),
+            ("ix_alert_cache_user_id", "alert_cache", ["user_id"]),
+            ("ix_rag_embeddings_user_id", "rag_embeddings", ["user_id"]),
+            ("ix_decision_reviews_user_id", "decision_reviews", ["user_id"]),
+            ("ix_chat_conversations_user_id", "chat_conversations", ["user_id"]),
+            ("ix_chat_conversations_updated_at", "chat_conversations", ["updated_at"]),
+            ("ix_chat_messages_conversation_id", "chat_messages", ["conversation_id"]),
+            ("ix_chat_messages_user_id", "chat_messages", ["user_id"]),
+        ]
+        _create_indexes_if_possible(conn, index_specs)
+
+
+def _repair_legacy_sqlite_schema(conn) -> None:
+    """Local-only repair path for older SQLite demo databases."""
+    inspector = inspect(conn)
+
+    def _table_exists(name: str) -> bool:
+        return inspector.has_table(name)
+
+    def _columns(table: str) -> set[str]:
+        if not _table_exists(table):
+            return set()
+        return {col["name"] for col in inspector.get_columns(table)}
+
+    def _add_column_if_missing(table: str, column: str, ddl_type: str) -> None:
+        if _table_exists(table) and column not in _columns(table):
+            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl_type}"))
+
+    _add_column_if_missing("alert_cache", "user_id", "TEXT")
+    _add_column_if_missing("diary_entries", "destination_name", "TEXT")
+    _add_column_if_missing("bookings", "user_email", "TEXT")
+
+    conn.execute(text(
+        """
+        CREATE TABLE IF NOT EXISTS trips (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            destination TEXT NOT NULL,
+            origin TEXT,
+            start_date TEXT NOT NULL,
+            end_date TEXT,
+            status TEXT NOT NULL DEFAULT 'active',
+            transport TEXT,
+            notes TEXT,
+            booking_id INTEGER,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    ))
+
+    _add_column_if_missing("expenses", "trip_id", "INTEGER")
+    _add_column_if_missing("expenses", "location", "TEXT")
+    _add_column_if_missing("expenses", "merchant", "TEXT")
+    _add_column_if_missing("reminders", "trip_id", "INTEGER")
+    _add_column_if_missing("voice_notes", "trip_id", "INTEGER")
+    _add_column_if_missing("voice_notes", "location", "TEXT")
+    _add_column_if_missing("diary_entries", "trip_id", "INTEGER")
+    _add_column_if_missing("bookings", "trip_id", "INTEGER")
+
+
+def _create_indexes_if_possible(conn, index_specs: list[tuple[str, str, list[str]]]) -> None:
+    inspector = inspect(conn)
+    table_names = set(inspector.get_table_names())
+
+    for index_name, table_name, columns in index_specs:
+        if table_name not in table_names:
+            continue
+        existing_columns = {col["name"] for col in inspector.get_columns(table_name)}
+        if not set(columns).issubset(existing_columns):
+            continue
+        cols_sql = ", ".join(columns)
+        conn.execute(text(f"CREATE INDEX IF NOT EXISTS {index_name} ON {table_name} ({cols_sql})"))
 
 
 @asynccontextmanager
@@ -117,6 +179,17 @@ async def lifespan(_app: FastAPI):
         Base.metadata.create_all(bind=engine)
 
     _ensure_user_indexes()
+
+    # Eagerly initialise Firebase Admin once, single-threaded, before any request
+    # can arrive. This removes the cold-start race where the dashboard's parallel
+    # requests each tried to initialise Firebase and intermittently got a 503.
+    if not auth_bypass:
+        try:
+            from .auth import init_firebase_at_startup
+        except ImportError:
+            from auth import init_firebase_at_startup
+        init_firebase_at_startup()
+
     logger.info(
         "startup_complete",
         extra={
@@ -160,6 +233,8 @@ app.include_router(expenses.router,   prefix="/api/expenses",    tags=["Expenses
 app.include_router(alerts.router,     prefix="/api/alerts",      tags=["Alerts"], dependencies=[Depends(get_current_user)])
 app.include_router(intent.router,     prefix="/api/intent",      tags=["Intent"], dependencies=[Depends(get_current_user)])
 app.include_router(chat.router,       prefix="/api/chat",        tags=["Chat"], dependencies=[Depends(get_current_user)])
+app.include_router(bookings.router,   prefix="/api/bookings",    tags=["Bookings"], dependencies=[Depends(get_current_user)])
+app.include_router(trips.router,      prefix="/api/trips",       tags=["Trips"], dependencies=[Depends(get_current_user)])
 
 
 # --- Global Exception Handler (prevents traceback leaks) ---

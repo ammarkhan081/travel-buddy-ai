@@ -1,12 +1,19 @@
 import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
-import 'package:path_provider/path_provider.dart';
-import 'dart:io';
-import 'package:intl/intl.dart';
-import 'package:flutter/foundation.dart';
+
+import 'package:timezone/timezone.dart' as tz;
+
 import '../../services/fastapi_service.dart';
+import '../../services/alarm_service.dart';
+import '../../theme/app_colors.dart';
+import '../../widgets/app_header.dart';
 
 class RecordVoiceNoteScreen extends StatefulWidget {
   const RecordVoiceNoteScreen({super.key});
@@ -55,36 +62,81 @@ class _RecordVoiceNoteScreenState extends State<RecordVoiceNoteScreen> {
     return DateTime.tryParse(raw)?.toLocal();
   }
 
+  /// Parses a datetime from the transcript text.
+  /// Handles: "today at 4pm", "tomorrow at 9am", "at 4pm" (no day → today/tomorrow),
+  /// "4pm", "4:30 am" (bare time with am/pm marker).
   DateTime? _parseDateTimeFromTranscript(String transcript) {
     final text = transcript.toLowerCase();
+    final now = DateTime.now();
+
+    // Helper: normalise hour with am/pm
+    int? _applyMeridiem(int hour, String mer) {
+      final m = mer.replaceAll('.', '').trim();
+      if (m == 'pm' && hour < 12) return hour + 12;
+      if (m == 'am' && hour == 12) return 0;
+      if (m.isEmpty && (hour < 0 || hour > 23)) return null;
+      return hour;
+    }
+
+    // 1. "today at 4pm" / "tomorrow at 9am" / "at 4pm today" / "at 4pm tomorrow"
     final dayMatch = RegExp(r'\b(today|tomorrow)\b').firstMatch(text);
-    // Accept common variations: "5pm", "5 pm", "5 p.m.", "17:30"
     final timeMatch = RegExp(
       r'\bat\s*(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)?\b',
       caseSensitive: false,
     ).firstMatch(text);
-    if (dayMatch == null || timeMatch == null) return null;
 
-    final dayWord = dayMatch.group(1)!;
-    int hour = int.tryParse(timeMatch.group(1) ?? '') ?? -1;
-    final minute = int.tryParse(timeMatch.group(2) ?? '0') ?? 0;
-    var mer = (timeMatch.group(3) ?? '').toLowerCase();
-    mer = mer.replaceAll('.', '');
-    if (minute < 0 || minute > 59) return null;
-
-    if (mer == 'pm' || mer == 'am') {
-      if (hour < 1 || hour > 12) return null;
-      if (mer == 'pm' && hour < 12) hour += 12;
-      if (mer == 'am' && hour == 12) hour = 0;
-    } else {
-      // 24-hour fallback (e.g., "at 17:30")
-      if (hour < 0 || hour > 23) return null;
+    if (dayMatch != null && timeMatch != null) {
+      int hour = int.tryParse(timeMatch.group(1) ?? '') ?? -1;
+      if (hour < 0) return null;
+      final minute = int.tryParse(timeMatch.group(2) ?? '0') ?? 0;
+      final mer = (timeMatch.group(3) ?? '').toLowerCase();
+      final adjusted = _applyMeridiem(hour, mer);
+      if (adjusted == null || minute < 0 || minute > 59) return null;
+      hour = adjusted;
+      final dayWord = dayMatch.group(1)!;
+      final base = dayWord == 'tomorrow'
+          ? now.add(const Duration(days: 1))
+          : now;
+      return DateTime(base.year, base.month, base.day, hour, minute);
     }
 
-    final now = DateTime.now();
-    final baseDate = dayWord == 'tomorrow' ? now.add(const Duration(days: 1)) : now;
-    final dt = DateTime(baseDate.year, baseDate.month, baseDate.day, hour, minute);
-    return dt;
+    // 2. "at 4pm" / "at 16:30" — no day word → default to today, tomorrow if past
+    if (timeMatch != null) {
+      int hour = int.tryParse(timeMatch.group(1) ?? '') ?? -1;
+      if (hour < 0) return null;
+      final minute = int.tryParse(timeMatch.group(2) ?? '0') ?? 0;
+      final mer = (timeMatch.group(3) ?? '').toLowerCase();
+      final adjusted = _applyMeridiem(hour, mer);
+      if (adjusted == null || minute < 0 || minute > 59) return null;
+      hour = adjusted;
+      var candidate = DateTime(now.year, now.month, now.day, hour, minute);
+      if (candidate.isBefore(now)) {
+        candidate = candidate.add(const Duration(days: 1));
+      }
+      return candidate;
+    }
+
+    // 3. Bare "4pm" / "4:30am" — last resort (requires explicit am/pm)
+    final bareTime = RegExp(
+      r'\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b',
+      caseSensitive: false,
+    ).firstMatch(text);
+    if (bareTime != null) {
+      int hour = int.tryParse(bareTime.group(1) ?? '') ?? -1;
+      if (hour < 0) return null;
+      final minute = int.tryParse(bareTime.group(2) ?? '0') ?? 0;
+      final mer = (bareTime.group(3) ?? '').toLowerCase();
+      final adjusted = _applyMeridiem(hour, mer);
+      if (adjusted == null || minute < 0 || minute > 59) return null;
+      hour = adjusted;
+      var candidate = DateTime(now.year, now.month, now.day, hour, minute);
+      if (candidate.isBefore(now)) {
+        candidate = candidate.add(const Duration(days: 1));
+      }
+      return candidate;
+    }
+
+    return null;
   }
 
   DateTime? _resolveReminderDateTime(String transcript, DateTime? suggested) {
@@ -140,6 +192,22 @@ class _RecordVoiceNoteScreenState extends State<RecordVoiceNoteScreen> {
       'status': 'pending',
       'priority': 'medium',
     });
+    // Schedule a real alarm so a reminder created here actually rings — parity
+    // with the manual and voice reminder screens. Same ID derivation as
+    // RemindersModule so it can be cancelled correctly. Best-effort.
+    try {
+      final tzDt = tz.TZDateTime.from(when, tz.local);
+      final alarmId =
+          tzDt.millisecondsSinceEpoch.remainder(2000000000).toInt();
+      await AlarmService.set(
+        id: alarmId,
+        title: 'Travel Reminder ⏰',
+        body: title,
+        scheduledDate: when,
+      );
+    } catch (e) {
+      debugPrint('RecordVoiceNote: alarm schedule failed: $e');
+    }
   }
 
   Future<void> _createExpense({
@@ -340,90 +408,131 @@ class _RecordVoiceNoteScreenState extends State<RecordVoiceNoteScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Record Voice Note'),
-        backgroundColor: const Color(0xFF6200EE),
-        foregroundColor: Colors.white,
-      ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text(
-              'Waveform Visualization',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 32),
-            Container(
-              width: 300,
-              height: 150,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: CustomPaint(
-                painter: WaveformPainter(_isRecording),
-                child: Center(
-                  child: _isRecording
-                      ? const Text(
-                          'Recording...',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.grey,
-                          ),
-                        )
-                      : const Text(
-                          'Tap to start recording',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.grey,
+      backgroundColor: theme.scaffoldBackgroundColor,
+      body: Column(
+        children: [
+          AppHeader(
+            title: 'Record Voice Note',
+            subtitle: 'Speak naturally — Travel Buddy AI figures it out',
+            onBack: () => Navigator.maybePop(context),
+          ),
+          Expanded(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+                child: Column(
+                  children: [
+                    // Waveform card
+                    Container(
+                      width: double.infinity,
+                      height: 160,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surface,
+                        borderRadius: BorderRadius.circular(AppRadii.lg),
+                        boxShadow:
+                            isDark ? const [] : AppShadows.softCard,
+                      ),
+                      child: CustomPaint(
+                        painter: WaveformPainter(_isRecording, isDark),
+                        child: Center(
+                          child: Text(
+                            _isRecording
+                                ? 'Recording…'
+                                : 'Tap the mic to start',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: isDark
+                                  ? AppColors.textSecondaryDark
+                                  : AppColors.textSecondary,
+                            ),
                           ),
                         ),
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+                    // Duration display
+                    Text(
+                      _formatDuration(_duration),
+                      style: const TextStyle(
+                        fontSize: 44,
+                        fontWeight: FontWeight.w900,
+                        color: AppColors.primary,
+                        letterSpacing: 1.5,
+                        height: 1,
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+                    // Mic button
+                    GestureDetector(
+                      onTap: _isUploading
+                          ? null
+                          : (_isRecording
+                              ? _stopRecording
+                              : _startRecording),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 250),
+                        width: 130,
+                        height: 130,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: _isRecording
+                                ? const [
+                                    Color(0xFFFF7B95),
+                                    AppColors.danger,
+                                  ]
+                                : const [
+                                    Color(0xFF7B5AFF),
+                                    AppColors.primaryDark,
+                                  ],
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: (_isRecording
+                                      ? AppColors.danger
+                                      : AppColors.primary)
+                                  .withValues(alpha: 0.40),
+                              blurRadius: 22,
+                              offset: const Offset(0, 12),
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          _isRecording
+                              ? Icons.stop_rounded
+                              : Icons.mic_rounded,
+                          color: Colors.white,
+                          size: 56,
+                        ),
+                      ),
+                    ),
+                    if (_isUploading) ...[
+                      const SizedBox(height: 22),
+                      const CircularProgressIndicator(),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Uploading and processing…',
+                        style: TextStyle(
+                          color: isDark
+                              ? AppColors.textSecondaryDark
+                              : AppColors.textSecondary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),
-            const SizedBox(height: 48),
-            Text(
-              _formatDuration(_duration),
-              style: const TextStyle(
-                fontSize: 32,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF6200EE),
-              ),
-            ),
-            const SizedBox(height: 48),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (_isRecording) ...[
-                  IconButton(
-                    iconSize: 64,
-                    icon: const Icon(Icons.stop_circle),
-                    color: Colors.red,
-                    onPressed: _isUploading ? null : () => _stopRecording(),
-                  ),
-                ] else ...[
-                  IconButton(
-                    iconSize: 64,
-                    icon: const Icon(Icons.mic),
-                    color: const Color(0xFF6200EE),
-                    onPressed: _isUploading ? null : () => _startRecording(),
-                  ),
-                ],
-              ],
-            ),
-            if (_isUploading) ...[
-              const SizedBox(height: 16),
-              const CircularProgressIndicator(),
-              const SizedBox(height: 8),
-              const Text('Uploading and processing...'),
-            ],
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -615,29 +724,41 @@ class _RecordVoiceNoteScreenState extends State<RecordVoiceNoteScreen> {
 
 class WaveformPainter extends CustomPainter {
   final bool isRecording;
+  final bool isDark;
 
-  WaveformPainter(this.isRecording);
+  WaveformPainter(this.isRecording, this.isDark);
 
   @override
   void paint(Canvas canvas, Size size) {
+    final activeColor = isRecording ? AppColors.primary : AppColors.primary.withValues(alpha: 0.18);
     final paint = Paint()
-      ..color = isRecording ? const Color(0xFF6200EE) : Colors.grey
-      ..strokeWidth = 2;
+      ..color = activeColor
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
 
-    if (isRecording) {
-      // Draw animated waveform
-      for (int i = 0; i < 20; i++) {
-        final x = (size.width / 20) * i;
-        final height = (size.height / 2) * (0.3 + (i % 3) * 0.2);
-        canvas.drawLine(
-          Offset(x, size.height / 2 - height),
-          Offset(x, size.height / 2 + height),
-          paint,
-        );
-      }
+    // Draw stylised waveform bars
+    const bars = 28;
+    for (int i = 0; i < bars; i++) {
+      final x = (size.width / bars) * i + (size.width / bars / 2);
+      // Wave-like heights — taller in the middle when recording
+      final mid = bars / 2;
+      final distFromCenter = (i - mid).abs() / mid;
+      final base = isRecording ? (1 - distFromCenter) : 0.20;
+      final variation = (i % 3 == 0)
+          ? 0.55
+          : (i % 3 == 1)
+              ? 0.30
+              : 0.45;
+      final height = (size.height / 2) * (0.20 + base * variation + 0.08);
+      canvas.drawLine(
+        Offset(x, size.height / 2 - height),
+        Offset(x, size.height / 2 + height),
+        paint,
+      );
     }
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+  bool shouldRepaint(covariant WaveformPainter oldDelegate) =>
+      oldDelegate.isRecording != isRecording || oldDelegate.isDark != isDark;
 }

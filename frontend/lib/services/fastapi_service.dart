@@ -109,10 +109,20 @@ class FastApiService {
     }
   }
 
-  /// Generic PUT request
-  Future<dynamic> post(String endpoint, Map<String, dynamic> body) async {
+  /// Generic POST request.
+  ///
+  /// `timeout` lets specific call sites (e.g. chat, which kicks off a slow
+  /// RAG + OpenAI round-trip on the backend) opt into a longer wait without
+  /// affecting other endpoints. Defaults to the standard `_timeout` so all
+  /// existing callers behave exactly as before.
+  Future<dynamic> post(
+    String endpoint,
+    Map<String, dynamic> body, {
+    Duration? timeout,
+  }) async {
     final uri = _buildUri(endpoint);
     var headers = await _getRequestHeaders();
+    final effectiveTimeout = timeout ?? _timeout;
 
     debugPrint('POST REQUEST: $uri | BODY: $body');
     bool refreshed = false;
@@ -123,7 +133,7 @@ class FastApiService {
           uri,
           headers: headers,
           body: jsonEncode(body),
-        ).timeout(_timeout);
+        ).timeout(effectiveTimeout);
         if ((response.statusCode == 401 || response.statusCode == 403) && !refreshed) {
           refreshed = true;
           headers = await _getRequestHeaders(forceRefresh: true);
@@ -176,6 +186,39 @@ class FastApiService {
     }
   }
 
+  /// Generic PATCH request
+  Future<dynamic> patch(String endpoint, Map<String, dynamic> body) async {
+    final uri = _buildUri(endpoint);
+    var headers = await _getRequestHeaders();
+
+    debugPrint('PATCH REQUEST: $uri | BODY: $body');
+    bool refreshed = false;
+    int attempts = 0;
+    while (attempts <= _maxRetries) {
+      try {
+        final response = await http.patch(
+          uri,
+          headers: headers,
+          body: jsonEncode(body),
+        ).timeout(_timeout);
+        if ((response.statusCode == 401 || response.statusCode == 403) && !refreshed) {
+          refreshed = true;
+          headers = await _getRequestHeaders(forceRefresh: true);
+          continue;
+        }
+        return _handleResponse(response);
+      } catch (e) {
+        if (e is AuthException) rethrow;
+        attempts++;
+        if (attempts > _maxRetries || e is ApiResponseException || e is! SocketException) {
+          if (e is ApiResponseException) rethrow;
+          throw _networkException(e, endpoint: endpoint);
+        }
+        await Future.delayed(Duration(seconds: attempts));
+      }
+    }
+  }
+
   /// Generic DELETE request
   Future<dynamic> delete(String endpoint) async {
     final uri = _buildUri(endpoint);
@@ -206,9 +249,12 @@ class FastApiService {
   }
 
   /// Multi-part POST for audio files
-  Future<dynamic> postVoice(String endpoint, File file, {Map<String, String>? queryParams}) async {
+  Future<dynamic> postVoice(String endpoint, File file, {
+    Map<String, String>? queryParams,
+    Map<String, String>? fields,
+  }) async {
     final uri = _buildUri(endpoint, queryParams: queryParams);
-    
+
     debugPrint('VOICE POST REQUEST: $uri | FILE: ${file.path}');
     bool refreshed = false;
     int attempts = 0;
@@ -219,6 +265,7 @@ class FastApiService {
         final request = http.MultipartRequest('POST', uri);
         final token = await _getToken(forceRefresh: refreshed);
         if (token != null) request.headers['Authorization'] = 'Bearer $token';
+        if (fields != null) request.fields.addAll(fields);
         request.files.add(await http.MultipartFile.fromPath('file', file.path));
 
         final streamedResponse = await request.send().timeout(const Duration(seconds: 30));

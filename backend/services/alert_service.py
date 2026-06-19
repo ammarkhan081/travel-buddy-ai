@@ -1,6 +1,9 @@
 """Service for context-aware alerts with SQLAlchemy caching."""
 
+import asyncio
 import logging
+import re
+
 import httpx
 from urllib.parse import urlencode
 from datetime import datetime, timezone
@@ -16,6 +19,52 @@ except ImportError:
     from config import settings
 
 logger = logging.getLogger(__name__)
+
+
+# Admin-area suffixes stripped when simplifying a reverse-geocoded address to a
+# city name that OpenWeather can resolve.
+_ADMIN_SUFFIXES = {"district", "division", "tehsil", "city", "region", "province", "valley", "town"}
+# Placeholder origins the app may send that cannot be geocoded for traffic.
+_UNRESOLVABLE_PLACES = {"current location", "my location", "unknown", ""}
+
+
+def _weather_location_candidates(location: str) -> List[str]:
+    """Return progressively simpler location strings to try for geocoding.
+
+    OpenWeather needs a city-like name, but the client may pass a full reverse-
+    geocoded address such as 'Skardu District, Baltistan Division, Gilgit-Baltistan'.
+    Yields, in order: the full string, the first comma-segment, that segment with a
+    trailing admin word removed, and finally the first word — e.g.
+    ['Skardu District, Baltistan Division, Gilgit-Baltistan', 'Skardu District', 'Skardu'].
+    """
+    raw = (location or "").strip()
+    if not raw:
+        return []
+    candidates = [raw]
+    first_segment = raw.split(",")[0].strip()
+    if first_segment and first_segment not in candidates:
+        candidates.append(first_segment)
+    words = first_segment.split()
+    if len(words) >= 2 and words[-1].lower() in _ADMIN_SUFFIXES:
+        stripped = " ".join(words[:-1]).strip()
+        if stripped and stripped not in candidates:
+            candidates.append(stripped)
+    if words and len(words[0]) >= 4 and words[0] not in candidates:
+        candidates.append(words[0])
+    return candidates
+
+
+def _is_coords(value: Optional[str]) -> bool:
+    """True if the string is a 'lat,lon' pair (which Google can use directly)."""
+    return bool(re.match(r"^\s*-?\d{1,3}(\.\d+)?\s*,\s*-?\d{1,3}(\.\d+)?\s*$", value or ""))
+
+
+def _is_unresolvable_place(value: Optional[str]) -> bool:
+    """True when the value is a placeholder that can't be geocoded (and isn't coords)."""
+    if _is_coords(value):
+        return False
+    return (value or "").strip().lower() in _UNRESOLVABLE_PLACES
+
 
 async def get_alerts_and_cache(db: Session, request: AlertRequest) -> AlertResponse:
     """Audit Step 10: Fetch real-time alerts and cache high-risk ones."""
@@ -33,57 +82,63 @@ async def get_alerts_and_cache(db: Session, request: AlertRequest) -> AlertRespo
     traffic_origin = request.origin or request.location or request.destination
     traffic_destination = request.destination or request.location or request.origin
 
-    # 1. Weather Alerts
-    if "weather" in requested_types:
-        weather = await fetch_weather(location_hint)
-        if weather:
-            risk_score += 0.3 if weather.risk_level in ["high", "critical"] else 0.1
-            recommendations.extend(weather.recommendations)
-            if weather.risk_level in ["high", "critical"]:
-                _cache_alert(
-                    db,
-                    "weather",
-                    weather.description,
-                    weather.risk_level,
-                    location_hint,
-                    request.user_id,
-                )
+    # Fetch weather, traffic and news CONCURRENTLY. They are independent external
+    # API calls, so running them in parallel keeps total latency at ~the slowest
+    # call instead of the sum — the client no longer times out waiting for alerts.
+    async def _skip():
+        return None
 
-    # 2. Traffic Alerts
-    if "traffic" in requested_types:
-        traffic = await fetch_traffic(traffic_origin, traffic_destination)
-        if traffic:
-            risk_score += 0.3 if traffic.risk_level in ["high", "critical"] else 0.1
-            recommendations.extend(traffic.recommendations)
-            if traffic.risk_level in ["high", "critical"]:
-                _cache_alert(
-                    db,
-                    "traffic",
-                    f"Delay: {traffic.estimated_delay}",
-                    traffic.risk_level,
-                    f"{traffic_origin or 'Unknown'} -> {traffic_destination or 'Unknown'}",
-                    request.user_id,
-                )
+    weather, traffic, news = await asyncio.gather(
+        fetch_weather(location_hint) if "weather" in requested_types else _skip(),
+        fetch_traffic(traffic_origin, traffic_destination) if "traffic" in requested_types else _skip(),
+        fetch_news(location_hint) if "news" in requested_types else _skip(),
+    )
 
-    # 3. News Alerts
-    if "news" in requested_types:
-        news = await fetch_news(location_hint)
-        if news:
-            risk_score += 0.2 if news.risk_level in ["high", "critical"] else 0.05
-            news_recommendations = getattr(news, "recommendations", None) or []
-            if news_recommendations:
-                recommendations.extend(news_recommendations)
-            elif news.headlines:
-                recommendations.append("Review local news updates before departure.")
-            if news.risk_level in ["high", "critical"]:
-                _cache_alert(
-                    db,
-                    "news",
-                    news.headlines[0] if news.headlines else "News Alert",
-                    news.risk_level,
-                    location_hint,
-                    request.user_id,
-                )
+    # 1. Weather
+    if weather:
+        risk_score += 0.3 if weather.risk_level in ["high", "critical"] else 0.1
+        recommendations.extend(weather.recommendations)
+        if weather.risk_level in ["high", "critical"]:
+            _cache_alert(
+                db,
+                "weather",
+                weather.description,
+                weather.risk_level,
+                location_hint,
+                request.user_id,
+            )
+
+    # 2. Traffic
+    if traffic:
+        risk_score += 0.3 if traffic.risk_level in ["high", "critical"] else 0.1
+        recommendations.extend(traffic.recommendations)
+        if traffic.risk_level in ["high", "critical"]:
+            _cache_alert(
+                db,
+                "traffic",
+                f"Delay: {traffic.estimated_delay}",
+                traffic.risk_level,
+                f"{traffic_origin or 'Unknown'} -> {traffic_destination or 'Unknown'}",
+                request.user_id,
+            )
+
+    # 3. News
+    if news:
+        risk_score += 0.2 if news.risk_level in ["high", "critical"] else 0.05
+        news_recommendations = getattr(news, "recommendations", None) or []
+        if news_recommendations:
+            recommendations.extend(news_recommendations)
+        elif news.headlines:
+            recommendations.append("Review local news updates before departure.")
+        if news.risk_level in ["high", "critical"]:
+            _cache_alert(
+                db,
+                "news",
+                news.headlines[0] if news.headlines else "News Alert",
+                news.risk_level,
+                location_hint,
+                request.user_id,
+            )
     
     risk_score = min(1.0, risk_score)
 
@@ -131,16 +186,30 @@ async def fetch_weather(location: str) -> Optional[WeatherAlert]:
     api_key = settings.OPENWEATHERMAP_API_KEY
     if not api_key:
         return None
+    candidates = _weather_location_candidates(location)
+    if not candidates:
+        return None
     try:
         weather_url = "http://api.openweathermap.org/data/2.5/weather"
-        weather_params = {"q": location, "appid": api_key, "units": "metric"}
         forecast_url = "http://api.openweathermap.org/data/2.5/forecast"
-        forecast_params = {"q": location, "appid": api_key, "units": "metric", "cnt": 8}
 
         async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(weather_url, params=weather_params)
-            if resp.status_code == 200:
-                data = resp.json()
+            # Try progressively simpler location names until one resolves, so a
+            # full reverse-geocoded address still yields weather for its city.
+            data = None
+            resolved_q = candidates[0]
+            resp = None
+            for _cand in candidates:
+                resp = await client.get(
+                    weather_url,
+                    params={"q": _cand, "appid": api_key, "units": "metric"},
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    resolved_q = _cand
+                    break
+            if data is not None:
+                forecast_params = {"q": resolved_q, "appid": api_key, "units": "metric", "cnt": 8}
                 main_data = data.get("main", {})
                 temp_raw = main_data.get("temp", main_data.get("feels_like"))
 
@@ -228,6 +297,22 @@ async def fetch_traffic(origin: Optional[str], destination: Optional[str]) -> Op
     """
     if not origin or not destination:
         return None
+
+    # The origin may be the placeholder "Current Location" (the app's default when
+    # the user hasn't typed an origin). Google can't geocode that, so skip the call
+    # gracefully — no error, no wasted latency — unless we were given real coords.
+    if _is_unresolvable_place(origin) or _is_unresolvable_place(destination):
+        return TrafficAlert(
+            location=f"{origin} -> {destination}",
+            route=f"{origin} -> {destination}",
+            current_traffic="unknown",
+            estimated_delay=None,
+            distance_text=None,
+            duration_text=None,
+            duration_in_traffic_text=None,
+            risk_level="low",
+            recommendations=[],
+        )
 
     api_key = settings.GOOGLE_MAPS_API_KEY
     if not api_key:

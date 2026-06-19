@@ -3,7 +3,7 @@
 import logging
 import json
 from datetime import datetime, timezone
-from typing import Dict
+from typing import Dict, Optional
 from sqlalchemy.orm import Session
 
 from ai.inference.stt_pipeline.transcriber import transcribe_audio
@@ -26,6 +26,18 @@ except ImportError:
 
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_trip(db: Session, user_id: str, when_iso: str):
+    """Best-effort active-trip resolution; never breaks the voice pipeline."""
+    try:
+        try:
+            from .trip_service import resolve_trip_id_for_new_record
+        except ImportError:
+            from services.trip_service import resolve_trip_id_for_new_record
+        return resolve_trip_id_for_new_record(db, user_id, when_iso)
+    except Exception:
+        return None
 
 
 def _heuristic_intent(text: str) -> str:
@@ -82,6 +94,7 @@ async def process_voice_command(
     audio_file,
     user_id: str = "default",
     persist: bool = True,
+    user_local_time: Optional[str] = None,
 ) -> Dict:
     """
     Unified pipeline:
@@ -102,9 +115,20 @@ async def process_voice_command(
             "details": {"error": "empty_transcript"},
         }
 
+    # Parse the user's local reference time (with offset) so GPT and the
+    # heuristic fallback can resolve relative phrases like "tomorrow at 9am".
+    ref_dt: Optional[datetime] = None
+    if user_local_time:
+        try:
+            ref_dt = datetime.fromisoformat(user_local_time)
+        except Exception:
+            pass
+
     intent_fallback_reason = None
     try:
-        intent_data = await detect_intent_gpt(normalized_for_nlp)
+        intent_data = await detect_intent_gpt(
+            normalized_for_nlp, user_local_time=user_local_time
+        )
     except Exception as e:
         logger.warning("intent_detection_unavailable", extra={"error": str(e)})
         intent_data = {
@@ -123,9 +147,9 @@ async def process_voice_command(
     if intent == "reminder":
         scheduled = parse_utc_datetime(intent_data.get("scheduled_time"))
         # Fallback: if model omits scheduled_time but transcript contains time words,
-        # parse directly from transcript to preserve direct Accept flow in UI.
+        # parse directly from transcript using the user's local reference time.
         if scheduled is None:
-            fallback_dt = parse_time_from_text(transcript)
+            fallback_dt = parse_time_from_text(transcript, reference_dt=ref_dt)
             scheduled = parse_utc_datetime(fallback_dt) if fallback_dt is not None else None
         confidence = float(intent_data.get("confidence", 0.0))
         title = intent_data.get("title") or transcript[:80]
@@ -216,6 +240,7 @@ async def process_voice_command(
             priority=intent_data.get("priority") or "medium",
             status="pending",
             created_at=now_iso,
+            trip_id=_resolve_trip(db, user_id, now_iso),
         )
         db.add(db_item)
         db.commit()
@@ -328,6 +353,8 @@ async def process_voice_command(
                 "confidence": effective_confidence,
                 "intent_confidence": intent_confidence,
                 "extract_confidence": extract_confidence,
+                "merchant": expense.get("merchant"),
+                "location": expense.get("location"),
             }
             review_id = _create_decision_review(
                 db,
@@ -355,6 +382,9 @@ async def process_voice_command(
             intent="expense",
             user_id=user_id,
             created_at=now_iso,
+            location=expense.get("location"),
+            merchant=expense.get("merchant"),
+            trip_id=_resolve_trip(db, user_id, now_iso),
         )
         db.add(db_item)
         db.commit()
@@ -384,6 +414,7 @@ async def process_voice_command(
             keywords=keywords,
             timestamp=now_iso,
             created_at=now_iso,
+            trip_id=_resolve_trip(db, user_id, now_iso),
         )
         db.add(note)
         db.commit()

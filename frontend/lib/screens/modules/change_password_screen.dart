@@ -1,6 +1,9 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../../theme/app_colors.dart';
+import '../../widgets/app_header.dart';
+
 class ChangePasswordScreen extends StatefulWidget {
   const ChangePasswordScreen({super.key});
 
@@ -90,170 +93,180 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
 
     if (_isGoogleUser) {
       return Scaffold(
-        appBar: AppBar(
-          title: const Text('Change Password'),
-          backgroundColor: theme.colorScheme.primary,
-          foregroundColor: theme.colorScheme.onPrimary,
-        ),
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(28),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.info_outline, size: 52, color: theme.colorScheme.primary),
-                const SizedBox(height: 16),
-                const Text(
-                  'Password change is not available for Google accounts.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'To change your password, update it through your Google account settings.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.grey),
-                ),
-              ],
+        backgroundColor: theme.scaffoldBackgroundColor,
+        body: Column(
+          children: [
+            AppHeader(
+              title: 'Change Password',
+              subtitle: 'Account security',
+              onBack: () => Navigator.maybePop(context),
             ),
-          ),
+            const Expanded(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Center(
+                  child: AppEmptyState(
+                    icon: Icons.g_mobiledata_rounded,
+                    title: 'Google account',
+                    subtitle:
+                        'Password change is managed through your Google account settings.',
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       );
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Change Password'),
-        backgroundColor: theme.colorScheme.primary,
-        foregroundColor: theme.colorScheme.onPrimary,
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 8),
-              const Text(
-                'Enter your current password and choose a new one.',
-                style: TextStyle(fontSize: 15, color: Colors.grey),
-              ),
-              const SizedBox(height: 28),
-              TextFormField(
-                controller: _currentPasswordController,
-                obscureText: _obscureCurrent,
-                textInputAction: TextInputAction.next,
-                decoration: InputDecoration(
-                  labelText: 'Current Password',
-                  prefixIcon: const Icon(Icons.lock),
-                  border: const OutlineInputBorder(),
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _obscureCurrent ? Icons.visibility : Icons.visibility_off,
-                    ),
-                    onPressed: () =>
-                        setState(() => _obscureCurrent = !_obscureCurrent),
-                  ),
-                ),
-                validator: (value) {
-                  if ((value ?? '').isEmpty) {
-                    return 'Please enter your current password';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _newPasswordController,
-                obscureText: _obscureNew,
-                textInputAction: TextInputAction.next,
-                decoration: InputDecoration(
-                  labelText: 'New Password',
-                  prefixIcon: const Icon(Icons.lock_outline),
-                  border: const OutlineInputBorder(),
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _obscureNew ? Icons.visibility : Icons.visibility_off,
-                    ),
-                    onPressed: () =>
-                        setState(() => _obscureNew = !_obscureNew),
-                  ),
-                ),
-                validator: (value) {
-                  if ((value ?? '').isEmpty) return 'Please enter a new password';
-                  if (value!.length < 6) {
-                    return 'Password must be at least 6 characters';
-                  }
-                  if (value == _currentPasswordController.text) {
-                    return 'New password must be different from current';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _confirmPasswordController,
-                obscureText: _obscureConfirm,
-                textInputAction: TextInputAction.done,
-                onFieldSubmitted: (_) => _loading ? null : _submit(),
-                decoration: InputDecoration(
-                  labelText: 'Confirm New Password',
-                  prefixIcon: const Icon(Icons.lock_outline),
-                  border: const OutlineInputBorder(),
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _obscureConfirm ? Icons.visibility : Icons.visibility_off,
-                    ),
-                    onPressed: () =>
-                        setState(() => _obscureConfirm = !_obscureConfirm),
-                  ),
-                ),
-                validator: (value) {
-                  if ((value ?? '').isEmpty) {
-                    return 'Please confirm your new password';
-                  }
-                  if (value != _newPasswordController.text) {
-                    return 'Passwords do not match';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 28),
-              SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: ElevatedButton(
-                  onPressed: _loading ? null : _submit,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: theme.colorScheme.primary,
-                    foregroundColor: theme.colorScheme.onPrimary,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: _loading
-                      ? const SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : const Text(
-                          'Change Password',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                ),
-              ),
-            ],
+      backgroundColor: theme.scaffoldBackgroundColor,
+      body: Column(
+        children: [
+          AppHeader(
+            title: 'Change Password',
+            subtitle: 'Protect your travel account',
+            onBack: () => Navigator.maybePop(context),
           ),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surface,
+                  borderRadius: BorderRadius.circular(AppRadii.lg),
+                  boxShadow: theme.brightness == Brightness.dark
+                      ? const []
+                      : AppShadows.softCard,
+                ),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Enter your current password and choose a new one.',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      _passwordField(
+                        controller: _currentPasswordController,
+                        label: 'Current Password',
+                        obscure: _obscureCurrent,
+                        icon: Icons.lock,
+                        onToggle: () =>
+                            setState(() => _obscureCurrent = !_obscureCurrent),
+                        validator: (value) {
+                          if ((value ?? '').isEmpty) {
+                            return 'Please enter your current password';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      _passwordField(
+                        controller: _newPasswordController,
+                        label: 'New Password',
+                        obscure: _obscureNew,
+                        icon: Icons.lock_outline,
+                        onToggle: () =>
+                            setState(() => _obscureNew = !_obscureNew),
+                        validator: (value) {
+                          if ((value ?? '').isEmpty) {
+                            return 'Please enter a new password';
+                          }
+                          if (value!.length < 6) {
+                            return 'Password must be at least 6 characters';
+                          }
+                          if (value == _currentPasswordController.text) {
+                            return 'New password must be different from current';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      _passwordField(
+                        controller: _confirmPasswordController,
+                        label: 'Confirm New Password',
+                        obscure: _obscureConfirm,
+                        icon: Icons.lock_outline,
+                        onToggle: () =>
+                            setState(() => _obscureConfirm = !_obscureConfirm),
+                        onSubmitted: (_) => _loading ? null : _submit(),
+                        validator: (value) {
+                          if ((value ?? '').isEmpty) {
+                            return 'Please confirm your new password';
+                          }
+                          if (value != _newPasswordController.text) {
+                            return 'Passwords do not match';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: ElevatedButton(
+                          onPressed: _loading ? null : _submit,
+                          child: _loading
+                              ? const SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Text(
+                                  'Change Password',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _passwordField({
+    required TextEditingController controller,
+    required String label,
+    required bool obscure,
+    required IconData icon,
+    required VoidCallback onToggle,
+    required String? Function(String?) validator,
+    ValueChanged<String>? onSubmitted,
+  }) {
+    return TextFormField(
+      controller: controller,
+      obscureText: obscure,
+      textInputAction: onSubmitted == null
+          ? TextInputAction.next
+          : TextInputAction.done,
+      onFieldSubmitted: onSubmitted,
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: Icon(icon),
+        suffixIcon: IconButton(
+          icon: Icon(obscure ? Icons.visibility : Icons.visibility_off),
+          onPressed: onToggle,
         ),
       ),
+      validator: validator,
     );
   }
 }

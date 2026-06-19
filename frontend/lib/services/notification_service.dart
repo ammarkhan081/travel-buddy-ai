@@ -3,8 +3,8 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:flutter_timezone/flutter_timezone.dart';
+import 'package:flutter_ringtone_player/flutter_ringtone_player.dart';
 import 'dart:io';
-import 'package:audioplayers/audioplayers.dart';
 import '../utils/app_keys.dart';
 
 class NotificationService {
@@ -17,9 +17,6 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _notificationsPlugin =
       FlutterLocalNotificationsPlugin();
   
-  // ── Alarm Sound Player ────────────────────────────────────────────────────
-  final AudioPlayer _audioPlayer = AudioPlayer();
-
   bool _isInitialized = false;
 
   // ── Shared notification details ───────────────────────────────────────────
@@ -334,34 +331,12 @@ class NotificationService {
   }
 
   void _showAlarmDialog(String message) {
-    // ── Start Ringing (Bulletproof version) ──────────────────────────────────
+    // ── Start Ringing using device built-in alarm sound ───────────────────────
     try {
-      _audioPlayer.setReleaseMode(ReleaseMode.loop);
-      
-      // Use a faster, shorter MP3 (beeping)
-      const String primaryUrl = 'https://www.soundjay.com/buttons/beep-07.mp3';
-      const String fallbackUrl = 'https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg';
-
-      // We wrap this in a future so any hanging network request doesn't block the UI
-      Future.delayed(Duration.zero, () async {
-        try {
-          await _audioPlayer.play(UrlSource(primaryUrl)).timeout(
-            const Duration(seconds: 5),
-            onTimeout: () {
-              debugPrint('NotificationService: Primary sound timed out, trying fallback.');
-              return _audioPlayer.play(UrlSource(fallbackUrl));
-            },
-          );
-          debugPrint('NotificationService: Sound triggered successfully.');
-        } catch (inner) {
-          debugPrint('NotificationService: Audio playing failed inside future: $inner');
-          // SILENT FAIL (Crucial): Do not throw error here or app will crash
-        }
-      });
-      
-      debugPrint('NotificationService: Sound initialization triggered.');
+      FlutterRingtonePlayer().playAlarm(looping: true);
+      debugPrint('NotificationService: Device alarm sound started.');
     } catch (e) {
-      debugPrint('NotificationService: Could not initialize sound player: $e');
+      debugPrint('NotificationService: Could not start alarm sound: $e');
     }
 
     final context = navigatorKey.currentContext;
@@ -412,10 +387,10 @@ class NotificationService {
 
   void _stopAlarmSound() {
     try {
-      _audioPlayer.stop();
-      debugPrint('NotificationService: Sound stopped.');
+      FlutterRingtonePlayer().stop();
+      debugPrint('NotificationService: Alarm sound stopped.');
     } catch (e) {
-      debugPrint('NotificationService: Could not stop sound: $e');
+      debugPrint('NotificationService: Could not stop alarm sound: $e');
     }
   }
 }

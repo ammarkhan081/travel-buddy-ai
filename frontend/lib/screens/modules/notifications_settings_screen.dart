@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../theme/app_colors.dart';
+import '../../widgets/app_header.dart';
+
 class NotificationsSettingsScreen extends StatefulWidget {
   const NotificationsSettingsScreen({super.key});
 
@@ -41,75 +44,171 @@ class _NotificationsSettingsScreenState
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
-    if (!_loaded) {
-      return Scaffold(
-        appBar: AppBar(
-          title: const Text('Notifications'),
-          backgroundColor: theme.colorScheme.primary,
-          foregroundColor: theme.colorScheme.onPrimary,
-        ),
-        body: const Center(child: CircularProgressIndicator()),
-      );
-    }
-
+    final isDark = theme.brightness == Brightness.dark;
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Notifications'),
-        backgroundColor: theme.colorScheme.primary,
-        foregroundColor: theme.colorScheme.onPrimary,
-      ),
-      body: ListView(
+      backgroundColor: theme.scaffoldBackgroundColor,
+      body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
-            child: Text(
-              'Notification Types',
-              style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w700,
-                color: theme.colorScheme.primary,
+          AppHeader(
+            title: 'Notifications',
+            subtitle: 'Choose what you want to be alerted about',
+            onBack: () => Navigator.maybePop(context),
+          ),
+          if (!_loaded)
+            const Expanded(
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
+                    child: Text(
+                      'Alert types',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.4,
+                        fontSize: 12.5,
+                        color: isDark
+                            ? AppColors.textSecondaryDark
+                            : AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                  _toggleCard(
+                    icon: Icons.alarm_rounded,
+                    iconColor: AppColors.primary,
+                    title: 'Reminders',
+                    subtitle: 'Alerts for your scheduled reminders',
+                    value: _reminderNotifications,
+                    onChanged: (v) {
+                      setState(() => _reminderNotifications = v);
+                      _save('notif.reminders', v);
+                    },
+                    isDark: isDark,
+                  ),
+                  const SizedBox(height: 10),
+                  _toggleCard(
+                    icon: Icons.cloud_outlined,
+                    iconColor: AppColors.infoBlue,
+                    title: 'Travel Alerts',
+                    subtitle: 'Weather, traffic and news updates',
+                    value: _alertNotifications,
+                    onChanged: (v) {
+                      setState(() => _alertNotifications = v);
+                      _save('notif.alerts', v);
+                    },
+                    isDark: isDark,
+                  ),
+                  const SizedBox(height: 10),
+                  _toggleCard(
+                    icon: Icons.payments_outlined,
+                    iconColor: AppColors.warning,
+                    title: 'Expense Prompts',
+                    subtitle: 'Confirmation after voice expense logging',
+                    value: _expenseNotifications,
+                    onChanged: (v) {
+                      setState(() => _expenseNotifications = v);
+                      _save('notif.expenses', v);
+                    },
+                    isDark: isDark,
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(AppRadii.md),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.info_outline,
+                            color: AppColors.primary, size: 18),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Reminder notifications require notification permission on your device.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isDark
+                                  ? AppColors.textSecondaryDark
+                                  : AppColors.textSecondary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
-          SwitchListTile(
-            title: const Text('Reminders'),
-            subtitle: const Text('Alerts for your scheduled reminders'),
-            value: _reminderNotifications,
-            activeColor: theme.colorScheme.primary,
-            onChanged: (v) {
-              setState(() => _reminderNotifications = v);
-              _save('notif.reminders', v);
-            },
-          ),
-          const Divider(height: 1),
-          SwitchListTile(
-            title: const Text('Travel Alerts'),
-            subtitle: const Text('Weather and traffic updates'),
-            value: _alertNotifications,
-            activeColor: theme.colorScheme.primary,
-            onChanged: (v) {
-              setState(() => _alertNotifications = v);
-              _save('notif.alerts', v);
-            },
-          ),
-          const Divider(height: 1),
-          SwitchListTile(
-            title: const Text('Expense Prompts'),
-            subtitle: const Text('Confirmation prompts after voice expense logging'),
-            value: _expenseNotifications,
-            activeColor: theme.colorScheme.primary,
-            onChanged: (v) {
-              setState(() => _expenseNotifications = v);
-              _save('notif.expenses', v);
-            },
-          ),
-          const Divider(height: 1),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Text(
-              'Note: Reminder notifications require notification permissions to be granted on your device.',
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+        ],
+      ),
+    );
+  }
+
+  Widget _toggleCard({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+    required bool isDark,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(AppRadii.lg),
+        boxShadow: isDark ? const [] : AppShadows.softCard,
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: iconColor.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(AppRadii.md),
             ),
+            child: Icon(icon, color: iconColor, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w800,
+                    color: isDark
+                        ? AppColors.textPrimaryDark
+                        : AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark
+                        ? AppColors.textSecondaryDark
+                        : AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: value,
+            onChanged: onChanged,
+            activeThumbColor: AppColors.primary,
           ),
         ],
       ),

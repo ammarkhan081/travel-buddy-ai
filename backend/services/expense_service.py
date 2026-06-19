@@ -25,16 +25,31 @@ from backend.utils.ai_runtime import call_with_retries
 logger = logging.getLogger(__name__)
 
 async def create_expense(db: Session, expense_data: ExpenseCreate) -> Expense:
-    """Create a new manual expense."""
+    """Create a new manual expense (auto-scoped to the user's active trip)."""
     try:
+        user_id = getattr(expense_data, "user_id", "default")
+        spend_date = to_utc_iso(expense_data.date)
+
+        # Resolve the trip this expense belongs to (explicit > active trip).
+        trip_id = getattr(expense_data, "trip_id", None)
+        if trip_id is None:
+            try:
+                from .trip_service import resolve_trip_id_for_new_record
+            except ImportError:
+                from services.trip_service import resolve_trip_id_for_new_record
+            trip_id = resolve_trip_id_for_new_record(db, user_id, spend_date)
+
         db_expense = Expense(
             amount=expense_data.amount,
             category=expense_data.category,
             description=expense_data.description,
-            date=to_utc_iso(expense_data.date),
-            user_id=getattr(expense_data, 'user_id', 'default'),
+            date=spend_date,
+            user_id=user_id,
             intent="manual",
-            created_at=now_utc_iso()
+            created_at=now_utc_iso(),
+            location=getattr(expense_data, "location", None),
+            merchant=getattr(expense_data, "merchant", None),
+            trip_id=trip_id,
         )
         db.add(db_expense)
         db.commit()
@@ -135,4 +150,3 @@ def filter_expenses(db: Session, user_id: str, category: Optional[str] = None, s
     if end:
         query = query.filter(Expense.date <= end)
     return query.all()
-

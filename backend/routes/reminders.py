@@ -1,7 +1,7 @@
 """Routes for reminders API."""
 
 import logging
-from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, Query
+from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, Query, Form
 from typing import List, Optional
 from sqlalchemy.orm import Session
 try:
@@ -72,12 +72,15 @@ async def update_reminder(
 @router.post("/voice", response_model=ReminderIntent)
 async def create_reminder_voice(
     file: UploadFile = File(...),
+    user_local_time: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     """
     POST /api/reminders/voice:
     Accepts multipart audio, runs Whisper STT + extraction (Review-first).
+    user_local_time: ISO-8601 string with offset (e.g. 2026-05-24T16:00:00+05:00)
+    so GPT can resolve relative times ("tomorrow") in the user's timezone.
     """
     try:
         result = await intent_orchestrator_service.process_voice_command(
@@ -85,7 +88,10 @@ async def create_reminder_voice(
             file.file,
             current_user.uid,
             persist=False,
+            user_local_time=user_local_time,
         )
+        transcript = result.get("transcript") or ""
+
         if result.get("intent") != "reminder":
             return ReminderIntent(
                 intent=result.get("intent", "other"),
@@ -95,6 +101,7 @@ async def create_reminder_voice(
                 entities={},
                 confidence=float(result.get("details", {}).get("confidence", 0.0)),
                 title=result.get("details", {}).get("title"),
+                transcript=transcript,
             )
 
         scheduled_time = None
@@ -109,6 +116,7 @@ async def create_reminder_voice(
             entities={},
             confidence=float(result.get("details", {}).get("confidence", 0.0)),
             title=result.get("details", {}).get("title"),
+            transcript=transcript,
         )
     except Exception as e:
         logger.exception("create_reminder_voice_failed", exc_info=e)

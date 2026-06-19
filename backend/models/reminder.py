@@ -20,3 +20,5 @@ class Reminder(Base):
     priority = Column(String, default="medium")
     status = Column(String, default="pending")
     created_at = Column(String, nullable=True)
+    # Per-trip scoping so the chatbot can answer "my reminders in <place>".
+    trip_id = Column(Integer, nullable=True, index=True)

@@ -20,16 +20,19 @@ class Settings:
     
     # Firebase
     FIREBASE_CREDENTIALS_PATH: Optional[str] = os.getenv("FIREBASE_CREDENTIALS_PATH", "")
+    FIREBASE_CREDENTIALS_JSON: str = os.getenv("FIREBASE_CREDENTIALS_JSON", "")
+    FIREBASE_CREDENTIALS_BASE64: str = os.getenv("FIREBASE_CREDENTIALS_BASE64", "")
     
     # Database
     DB_PATH: str = os.getenv("DB_PATH", "travel_buddy.db")
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "")
     
     # API Settings
     OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     OPENAI_MODEL_FALLBACKS: str = os.getenv("OPENAI_MODEL_FALLBACKS", "gpt-4.1-mini,gpt-3.5-turbo")
     OPENAI_EMBEDDING_MODEL: str = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
     WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "whisper-1")
-    APP_TIMEZONE: str = os.getenv("APP_TIMEZONE", "UTC")
+    APP_TIMEZONE: str = os.getenv("APP_TIMEZONE", "Asia/Karachi")
     CHAT_MAX_HISTORY_MESSAGES: int = int(os.getenv("CHAT_MAX_HISTORY_MESSAGES", "20"))
     CHAT_MAX_CONTEXT_CHARS: int = int(os.getenv("CHAT_MAX_CONTEXT_CHARS", "2800"))
     RAG_SIMILARITY_THRESHOLD: float = float(os.getenv("RAG_SIMILARITY_THRESHOLD", "0.30"))

@@ -13,6 +13,7 @@ import 'screens/home_page.dart';
 
 // Modules
 import 'screens/modules/alerts_module.dart';
+import 'screens/modules/weather_module.dart';
 import 'screens/modules/voice_notes_module.dart';
 import 'screens/modules/record_voice_note_screen.dart';
 import 'screens/modules/diary_module.dart';
@@ -28,27 +29,34 @@ import 'screens/modules/ai_settings_screen.dart';
 import 'screens/modules/journey_history_screen.dart';
 import 'screens/modules/emergency_contacts_screen.dart';
 import 'screens/modules/start_journey_screen.dart';
+import 'screens/modules/packing_checklist_screen.dart';
+import 'screens/modules/currency_converter_screen.dart';
 import 'theme/themeprovider.dart';
 import 'services/notification_service.dart';
 
 import 'dart:async';
+import 'package:alarm/alarm.dart';
+import 'screens/alarm_ring_screen.dart';
 import 'utils/app_keys.dart';
 
 void main() {
-  runZonedGuarded(() async {
-    WidgetsFlutterBinding.ensureInitialized();
-    debugPrint('MAIN: WidgetsBinding initialized.');
+  runZonedGuarded(
+    () async {
+      WidgetsFlutterBinding.ensureInitialized();
+      debugPrint('MAIN: WidgetsBinding initialized.');
 
-    runApp(
-      ChangeNotifierProvider(
-        create: (_) => ThemeProvider()..loadTheme(),
-        child: const MainEntryPoint(),
-      ),
-    );
-  }, (error, stack) {
-    debugPrint('MAIN CRITICAL ERROR: $error');
-    debugPrint(stack.toString());
-  });
+      runApp(
+        ChangeNotifierProvider(
+          create: (_) => ThemeProvider()..loadTheme(),
+          child: const MainEntryPoint(),
+        ),
+      );
+    },
+    (error, stack) {
+      debugPrint('MAIN CRITICAL ERROR: $error');
+      debugPrint(stack.toString());
+    },
+  );
 }
 
 class MainEntryPoint extends StatefulWidget {
@@ -60,11 +68,18 @@ class MainEntryPoint extends StatefulWidget {
 
 class _MainEntryPointState extends State<MainEntryPoint> {
   bool _isInitialized = false;
+  StreamSubscription<AlarmSettings>? _alarmSub;
 
   @override
   void initState() {
     super.initState();
     _startInitialization();
+  }
+
+  @override
+  void dispose() {
+    _alarmSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _startInitialization() async {
@@ -96,7 +111,29 @@ class _MainEntryPointState extends State<MainEntryPoint> {
       // Continue anyway — app should still run even if notifications fail
     }
 
-    // ── 3. Mark app as ready ──────────────────────────────────────────────────
+    // ── 3. Alarm package ──────────────────────────────────────────────────────
+    // Initialise the alarm package, then subscribe to the ring stream.
+    // When an alarm fires (even if the app was killed), the stream emits and
+    // we push AlarmRingScreen — a full-screen dismiss UI that stops the sound.
+    try {
+      await Alarm.init(showDebugLogs: true); // ← keep true until alarms ring reliably
+      _alarmSub = Alarm.ringStream.stream.listen((alarmSettings) {
+        // addPostFrameCallback ensures Navigator is attached before we push
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          navigatorKey.currentState?.push(
+            MaterialPageRoute(
+              fullscreenDialog: true,
+              builder: (_) => AlarmRingScreen(alarmSettings: alarmSettings),
+            ),
+          );
+        });
+      });
+      debugPrint('MAIN: Alarm service initialized.');
+    } catch (e) {
+      debugPrint('MAIN: Alarm service init failed: $e');
+    }
+
+    // ── 4. Mark app as ready ──────────────────────────────────────────────────
     if (mounted) {
       setState(() {
         _isInitialized = true;
@@ -129,12 +166,13 @@ class MyApp extends StatelessWidget {
       builder: (context, themeProvider, _) {
         return MaterialApp(
           navigatorKey: navigatorKey,
-          title: 'FYP App',
+          navigatorObservers: [routeObserver],
+          title: 'Travio',
           debugShowCheckedModeBanner: false,
           theme: themeProvider.lightTheme,
           darkTheme: themeProvider.darkTheme,
           themeMode: themeProvider.themeMode,
-          initialRoute: '/',
+          initialRoute: '/splash',
           routes: {
             '/': (context) => const AuthGate(),
             '/splash': (context) => const SplashScreen(),
@@ -146,6 +184,7 @@ class MyApp extends StatelessWidget {
 
             // Modules
             '/alerts': (context) => const AlertsModule(),
+            '/weather': (context) => const WeatherModule(),
             '/voiceNotes': (context) => const VoiceNotesModule(),
             '/recordVoiceNote': (context) => const RecordVoiceNoteScreen(),
             '/diary': (context) => const DiaryModule(),
@@ -160,6 +199,8 @@ class MyApp extends StatelessWidget {
             '/journeyHistory': (context) => const JourneyHistoryScreen(),
             '/emergencyContacts': (context) => const EmergencyContactsScreen(),
             '/startJourney': (context) => const StartJourneyScreen(),
+            '/packingChecklist': (context) => const PackingChecklistScreen(),
+            '/currencyConverter': (context) => const CurrencyConverterScreen(),
             AiSettingsScreen.routeName: (context) => const AiSettingsScreen(),
           },
         );

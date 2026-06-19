@@ -36,6 +36,12 @@ class ChatSendRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=4000)
 
 
+class ChatRenameRequest(BaseModel):
+    """Body for renaming a saved conversation."""
+
+    title: str = Field(..., min_length=1, max_length=80)
+
+
 class ChatTurnResponse(BaseModel):
     """Result of one user turn: persisted user + assistant messages and updated conversation."""
 

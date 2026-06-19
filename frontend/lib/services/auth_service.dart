@@ -120,6 +120,17 @@ class AuthService {
         return 'No user found for that email.';
       case 'wrong-password':
         return 'Wrong password provided.';
+      // Modern Firebase (email-enumeration protection ON) returns this single
+      // code for a wrong password OR an email with no password credential,
+      // instead of the legacy 'wrong-password'/'user-not-found' codes.
+      case 'invalid-credential':
+      case 'INVALID_LOGIN_CREDENTIALS':
+      case 'invalid-login-credentials':
+        return 'Incorrect email or password. Please try again.';
+      case 'network-request-failed':
+        return 'No internet connection. Please check your network and try again.';
+      case 'account-exists-with-different-credential':
+        return 'This email is already registered with a different sign-in method (try "Continue with Google").';
       case 'user-disabled':
         return 'This user account has been disabled.';
       case 'too-many-requests':

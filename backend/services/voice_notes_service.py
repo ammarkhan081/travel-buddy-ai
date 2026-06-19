@@ -21,6 +21,18 @@ from backend.utils.transcript_utils import extract_keywords
 logger = logging.getLogger(__name__)
 
 
+def _resolve_trip_id(db: Session, user_id: str, when_iso: str):
+    """Best-effort active-trip resolution; never breaks note creation."""
+    try:
+        try:
+            from .trip_service import resolve_trip_id_for_new_record
+        except ImportError:
+            from services.trip_service import resolve_trip_id_for_new_record
+        return resolve_trip_id_for_new_record(db, user_id, when_iso)
+    except Exception:
+        return None
+
+
 def create_note_from_text(db: Session, transcript: str, user_id: str, keywords: Optional[str] = None) -> VoiceNote:
     """Persist a voice note from an existing transcript (no STT pass)."""
     text = (transcript or "").strip()
@@ -35,6 +47,7 @@ def create_note_from_text(db: Session, transcript: str, user_id: str, keywords: 
         keywords=computed_keywords,
         timestamp=now_iso,
         created_at=now_iso,
+        trip_id=_resolve_trip_id(db, user_id, now_iso),
     )
     db.add(db_note)
     db.commit()
@@ -63,7 +76,8 @@ async def transcribe_and_save(db: Session, audio_file, user_id: str) -> VoiceNot
             transcript=transcript,
             keywords=keywords,
             timestamp=now_iso,
-            created_at=now_iso
+            created_at=now_iso,
+            trip_id=_resolve_trip_id(db, user_id, now_iso),
         )
         db.add(db_note)
         db.commit()
@@ -94,4 +108,3 @@ def delete_voice_note(db: Session, note_id: int, user_id: str) -> bool:
         db.commit()
         return True
     return False
-

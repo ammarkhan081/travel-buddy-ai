@@ -2,7 +2,7 @@
 
 import os
 import logging
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, UploadFile, File
 from fastapi.responses import FileResponse
 from typing import List, Optional
 from sqlalchemy.orm import Session
@@ -10,14 +10,16 @@ try:
     from ..auth import AuthenticatedUser, get_current_user
     from ..database import get_db
     from ..schemas.diary import (
-        DiaryCreateManual, DiaryEntryResponse, DiaryGenerateRequest, DiaryUpdateRequest
+        DiaryCreateManual, DiaryEntryResponse, DiaryGenerateRequest,
+        DiaryUpdateRequest, TripDiaryGenerateRequest,
     )
     from ..services import diary_service
 except ImportError:
     from auth import AuthenticatedUser, get_current_user
     from database import get_db
     from schemas.diary import (
-        DiaryCreateManual, DiaryEntryResponse, DiaryGenerateRequest, DiaryUpdateRequest
+        DiaryCreateManual, DiaryEntryResponse, DiaryGenerateRequest,
+        DiaryUpdateRequest, TripDiaryGenerateRequest,
     )
     from services import diary_service
 
@@ -33,6 +35,28 @@ async def get_diary_entries(
 ):
     """GET /api/diary: Returns all entries from SQLite."""
     return diary_service.get_diary_entries(db, current_user.uid)
+
+
+@router.post("/voice", response_model=DiaryEntryResponse)
+async def create_voice_diary(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """POST /api/diary/voice: Record a voice note → AI writes an English diary entry.
+
+    Analyses the transcript together with recent tour reminders, voice notes,
+    weather cues and alerts to produce a rich narrative entry in English.
+    """
+    try:
+        return await diary_service.generate_voice_diary(
+            db=db,
+            user_id=current_user.uid,
+            audio_file=file.file,
+        )
+    except Exception as e:
+        logger.exception("diary_voice_create_failed", exc_info=e)
+        raise HTTPException(status_code=500, detail="Failed to create voice diary entry.")
 
 
 @router.post("/manual", response_model=DiaryEntryResponse)
@@ -63,6 +87,32 @@ async def auto_generate_diary(
     except Exception as e:
         logger.exception("diary_auto_generate_failed", exc_info=e)
         raise HTTPException(status_code=500, detail="Failed to auto-generate diary entry.")
+
+
+@router.post("/trip-diary", response_model=DiaryEntryResponse)
+async def generate_trip_diary(
+    request: TripDiaryGenerateRequest,
+    db: Session = Depends(get_db),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """POST /api/diary/trip-diary: Generate a destination-specific trip diary.
+
+    Works for both booked trips (pass booking_id) and unplanned friend trips
+    (just provide destination_name, from_date, optional return_date and notes).
+    """
+    try:
+        return await diary_service.generate_trip_diary(
+            db=db,
+            user_id=current_user.uid,
+            destination_name=request.destination_name,
+            from_date=request.from_date,
+            return_date=request.return_date,
+            notes=request.notes,
+            booking_id=request.booking_id,
+        )
+    except Exception as e:
+        logger.exception("diary_trip_generate_failed", exc_info=e)
+        raise HTTPException(status_code=500, detail="Failed to generate trip diary.")
 
 
 # Keep /generate as alias for backward compatibility

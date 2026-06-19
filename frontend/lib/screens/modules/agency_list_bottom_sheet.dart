@@ -29,7 +29,7 @@ class AgencyListBottomSheet extends StatelessWidget {
             width: 40,
             height: 4,
             decoration: BoxDecoration(
-              color: theme.colorScheme.onSurface.withOpacity(0.3),
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -57,7 +57,7 @@ class AgencyListBottomSheet extends StatelessWidget {
                   'Connect with trusted travel agencies in Pakistan',
                   style: TextStyle(
                     fontSize: 13,
-                    color: theme.colorScheme.onSurface.withOpacity(0.6),
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                   ),
                 ),
               ],
@@ -92,7 +92,7 @@ class AgencyListBottomSheet extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        border: Border.all(color: theme.colorScheme.outline.withOpacity(0.3)),
+        border: Border.all(color: theme.colorScheme.outline.withValues(alpha: 0.3)),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Material(
@@ -187,7 +187,7 @@ class AgencyListBottomSheet extends StatelessWidget {
                         ],
                       ),
                     ),
-                    Icon(Icons.arrow_forward_ios, color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7), size: 16),
+                    Icon(Icons.arrow_forward_ios, color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7), size: 16),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -230,7 +230,7 @@ class AgencyListBottomSheet extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.w600,
-                        color: theme.colorScheme.onSurface.withOpacity(0.6),
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                       ),
                     ),
                   ),

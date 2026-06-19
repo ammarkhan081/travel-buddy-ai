@@ -19,13 +19,28 @@ NEWS_API_KEY=your_newsapi_key_here
 # Firebase (optional)
 FIREBASE_CREDENTIALS_PATH=backend/firebase_service_account.json
 
+# Cloud Firebase Admin credentials (prefer one of these instead of a file)
+FIREBASE_CREDENTIALS_JSON={"type":"service_account",...}
+FIREBASE_CREDENTIALS_BASE64=base64_encoded_service_account_json
+
 # Database
 DB_PATH=travel_buddy.db
+
+# Cloud database (leave empty for local SQLite)
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
 ```
 
 `DB_PATH` relative values are resolved from the `backend/` directory, so
 `travel_buddy.db` consistently means `backend/travel_buddy.db` even when the
 server is started from the project root.
+
+When `DATABASE_URL` is set, it takes priority over `DB_PATH`. Use this for
+cloud deployments so app data is stored in a managed database instead of the
+server's local filesystem.
+
+For cloud deployments, prefer `FIREBASE_CREDENTIALS_JSON` or
+`FIREBASE_CREDENTIALS_BASE64` instead of uploading
+`firebase_service_account.json`.
 
 ### 2. Install Dependencies
 
@@ -56,6 +71,12 @@ alembic -c alembic.ini stamp 20260306_01
 
 # Apply migrations for new/prod environments
 alembic -c alembic.ini upgrade head
+```
+
+For cloud PostgreSQL, set `DATABASE_URL` first, then run:
+
+```bash
+alembic -c backend/alembic.ini upgrade head
 ```
 
 ### 4. Run the Server
@@ -143,7 +164,7 @@ backend/
 ### Common Issues
 
 1. **Import Errors**: Ensure PYTHONPATH includes project root
-2. **Database Errors**: Check DB_PATH and file permissions. Relative DB_PATH values point inside `backend/`.
+2. **Database Errors**: For local SQLite, check DB_PATH and file permissions. For cloud deployments, check DATABASE_URL and run Alembic migrations.
 3. **API Key Errors**: Verify .env file and API key validity
 4. **spaCy Model**: Run `python -m spacy download en_core_web_sm`
 

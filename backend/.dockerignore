@@ -1,0 +1,26 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+.venv/
+
+# Local secrets and environment files
+.env
+.env.*
+firebase_service_account.json
+*service_account*.json
+
+# Local databases and generated artifacts
+*.db
+*.db-shm
+*.db-wal
+diary_files/
+
+# Test and cache outputs
+.pytest_cache/
+coverage/
+htmlcov/

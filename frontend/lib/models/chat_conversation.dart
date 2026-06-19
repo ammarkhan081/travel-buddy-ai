@@ -15,7 +15,7 @@ class ChatConversation {
   });
 
   factory ChatConversation.fromJson(Map<String, dynamic> json) {
-    DateTime _parse(dynamic raw) {
+    DateTime parse(dynamic raw) {
       if (raw is String && raw.isNotEmpty) {
         try {
           return DateTime.parse(raw);
@@ -30,8 +30,8 @@ class ChatConversation {
           ? json['title'] as String
           : 'New Chat',
       lastLocation: json['last_location'] as String?,
-      createdAt: _parse(json['created_at']),
-      updatedAt: _parse(json['updated_at']),
+      createdAt: parse(json['created_at']),
+      updatedAt: parse(json['updated_at']),
     );
   }
 

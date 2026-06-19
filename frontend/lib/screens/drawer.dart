@@ -236,6 +236,15 @@ class _DashboardDrawerState extends State<DashboardDrawer>
     );
   }
 
+  void _closeDrawerThenPush(String route) {
+    final navigator = Navigator.of(context);
+    navigator.pop();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      navigator.pushNamed(route);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -305,18 +314,12 @@ class _DashboardDrawerState extends State<DashboardDrawer>
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 children: [
                   _buildDrawerTile(Icons.home_rounded, 'Home', () => Navigator.pop(context)),
-                  _buildDrawerTile(Icons.chat_bubble_outline, 'Chat',
-                          () => Navigator.pushNamed(context, '/chat')),
-                  _buildDrawerTile(Icons.notifications_active, 'Alerts',
-                          () => Navigator.pushNamed(context, '/alerts')),
-                  _buildDrawerTile(Icons.alarm, 'Reminders',
-                          () => Navigator.pushNamed(context, '/reminders')),
-                  _buildDrawerTile(Icons.book, 'Diary',
-                          () => Navigator.pushNamed(context, '/diary')),
-                  _buildDrawerTile(Icons.mic, 'Voice Notes',
-                          () => Navigator.pushNamed(context, '/voiceNotes')),
-                  _buildDrawerTile(Icons.account_balance_wallet, 'Expenses',
-                          () => Navigator.pushNamed(context, '/expenseTracker')),
+                  _buildDrawerTile(Icons.chat_bubble_outline, 'Chat', () => _closeDrawerThenPush('/chat')),
+                  _buildDrawerTile(Icons.notifications_active, 'Alerts', () => _closeDrawerThenPush('/alerts')),
+                  _buildDrawerTile(Icons.alarm, 'Reminders', () => _closeDrawerThenPush('/reminders')),
+                  _buildDrawerTile(Icons.book, 'Diary', () => _closeDrawerThenPush('/diary')),
+                  _buildDrawerTile(Icons.mic, 'Voice Notes', () => _closeDrawerThenPush('/voiceNotes')),
+                  _buildDrawerTile(Icons.account_balance_wallet, 'Expenses', () => _closeDrawerThenPush('/expenseTracker')),
                   const SizedBox(height: 16),
                   _buildDrawerTile(Icons.feedback, 'Feedback', _showFeedbackPanel),
                   const SizedBox(height: 16),

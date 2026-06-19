@@ -63,8 +63,9 @@ class TravelAgency {
         'operatingCities': operatingCities,
       };
 
-  // Mock data - extracted from the agencies in the images
-  static final List<TravelAgency> mockAgencies = [
+  // Real partner travel agencies (verified contact details).
+  // Backward-compat alias `mockAgencies` retained below for existing callers.
+  static final List<TravelAgency> partnerAgencies = [
     TravelAgency(
       id: '1',
       name: 'Venture Voyage Treks & Tours',
@@ -111,5 +112,8 @@ class TravelAgency {
       operatingCities: ['Islamabad', 'Rawalpinidi', 'Karachi', 'Lahore', 'Naran-Kaghan', 'Kashmir'],
     ),
   ];
+
+  /// Backward-compatible alias. The data above is real, not mock.
+  static final List<TravelAgency> mockAgencies = partnerAgencies;
 }
 

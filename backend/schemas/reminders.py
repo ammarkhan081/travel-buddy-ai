@@ -12,6 +12,7 @@ class ReminderCreate(BaseModel):
     user_id: Optional[str] = Field("default", description="User ID")
     location: Optional[str] = Field(None, description="Location for the reminder")
     priority: Optional[str] = Field("medium", description="Priority: low, medium, high")
+    trip_id: Optional[int] = Field(None, description="Trip id (auto-resolved if omitted)")
 
 
 class ReminderResponse(BaseModel):
@@ -26,6 +27,7 @@ class ReminderResponse(BaseModel):
     priority: str
     created_at: str
     status: str
+    trip_id: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -40,9 +42,9 @@ class ReminderIntent(BaseModel):
     entities: dict = Field(default_factory=dict, description="Additional extracted entities")
     confidence: float = Field(default=0.0, description="Extraction confidence (0-1)")
     title: Optional[str] = Field(None, description="Extracted title")
+    transcript: Optional[str] = Field(None, description="Raw transcript text from STT")
 
 
 class ReminderUpdate(BaseModel):
     """Schema for updating reminder status."""
     status: Literal["pending", "completed"] = Field(..., description="Updated status")
-

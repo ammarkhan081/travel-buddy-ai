@@ -4,6 +4,7 @@ Endpoints:
 - POST /api/chat/reply                           (legacy stateless, kept for back-compat)
 - GET  /api/chat/conversations                   list user's conversations (sidebar)
 - POST /api/chat/conversations                   create a new empty conversation
+- PATCH /api/chat/conversations/{id}             rename a conversation
 - GET  /api/chat/conversations/{id}/messages     get all messages in a conversation
 - POST /api/chat/conversations/{id}/reply        send a user message, get assistant reply
 - DELETE /api/chat/conversations/{id}            delete a conversation and its messages
@@ -22,6 +23,7 @@ try:
     from ..schemas.chat import (
         ChatConversationResponse,
         ChatMessageResponse,
+        ChatRenameRequest,
         ChatSendRequest,
         ChatTurnResponse,
     )
@@ -33,6 +35,7 @@ except ImportError:
     from schemas.chat import (
         ChatConversationResponse,
         ChatMessageResponse,
+        ChatRenameRequest,
         ChatSendRequest,
         ChatTurnResponse,
     )
@@ -109,6 +112,23 @@ async def get_messages(
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found.")
     return chat_service.list_messages(db, conv_id, current_user.uid)
+
+
+@router.patch("/conversations/{conv_id}", response_model=ChatConversationResponse)
+async def rename_conversation(
+    conv_id: int,
+    payload: ChatRenameRequest,
+    db: Session = Depends(get_db),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Rename a saved conversation from the sidebar."""
+    try:
+        conv = chat_service.rename_conversation(db, conv_id, current_user.uid, payload.title)
+    except ChatError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+    return conv
 
 
 @router.post("/conversations/{conv_id}/reply", response_model=ChatTurnResponse)

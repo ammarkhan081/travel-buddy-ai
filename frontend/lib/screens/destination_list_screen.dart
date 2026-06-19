@@ -113,10 +113,15 @@ class _CompactDestinationCard extends StatelessWidget {
                       const Icon(Icons.star, color: Color(0xFFFFC107), size: 17),
                       const SizedBox(width: 4),
                       Text(destination.rating.toStringAsFixed(1), style: const TextStyle(fontWeight: FontWeight.w800)),
-                      const Spacer(),
-                      Text(
-                        '\$${destination.pricePerDay}/day',
-                        style: const TextStyle(color: Color(0xFF1E66F5), fontWeight: FontWeight.w900),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'PKR ${destination.pricePerDay}/day',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.end,
+                          style: const TextStyle(color: Color(0xFF1E66F5), fontWeight: FontWeight.w900),
+                        ),
                       ),
                     ],
                   ),
