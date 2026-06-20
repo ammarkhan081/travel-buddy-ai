@@ -101,6 +101,8 @@ signing_report.txt
 *.temp
 node_modules/
 .fuse_hidden*
+.hf-space-deploy/
+.hf-space-deploy.tar
 
 # Evaluation outputs
 backend/evaluation/results/*.json

@@ -34,10 +34,10 @@ except ImportError:
 
 try:
     # Preferred package-safe imports when running via `uvicorn backend.main:app`
-    from .routes import reminders, voice_notes, diary, expenses, alerts, intent, chat, bookings, trips
+    from .routes import reminders, voice_notes, diary, expenses, alerts, intent, chat, bookings, trips, weather
 except ImportError:
     # Backward-compatible fallback for direct execution contexts
-    from routes import reminders, voice_notes, diary, expenses, alerts, intent, chat, bookings, trips
+    from routes import reminders, voice_notes, diary, expenses, alerts, intent, chat, bookings, trips, weather
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -235,6 +235,7 @@ app.include_router(intent.router,     prefix="/api/intent",      tags=["Intent"]
 app.include_router(chat.router,       prefix="/api/chat",        tags=["Chat"], dependencies=[Depends(get_current_user)])
 app.include_router(bookings.router,   prefix="/api/bookings",    tags=["Bookings"], dependencies=[Depends(get_current_user)])
 app.include_router(trips.router,      prefix="/api/trips",       tags=["Trips"], dependencies=[Depends(get_current_user)])
+app.include_router(weather.router,    prefix="/api/weather",     tags=["Weather"], dependencies=[Depends(get_current_user)])
 
 
 # --- Global Exception Handler (prevents traceback leaks) ---
