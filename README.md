@@ -1,3 +1,9 @@
+---
+title: Travel Buddy AI Backend
+sdk: docker
+app_port: 7860
+---
+
 # Travel Buddy AI: Context-Aware Travel Companion
 
 **AI Specialist & Backend Developer:** Ammar Ayaz (22PWBCS0950)
